@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   Alert, AppBar, Avatar, Box, Button, Card, CardContent, Chip, Container,
   CssBaseline, Divider, IconButton, LinearProgress, MenuItem, Stack,
@@ -13,7 +13,7 @@ import {
   SettingsRounded, ShoppingCartRounded, WalletRounded
 } from '@mui/icons-material';
 import { buildTheme } from './theme/mui';
-import { brand, primitives, themes, type ThemeName } from './theme/tokens';
+import { brand, themes, type ThemeName } from './theme/tokens';
 import { api, login, register } from './api/client';
 import './styles.css';
 
@@ -200,7 +200,14 @@ export default function App() {
   </Stack>;
 
   return <ThemeProvider theme={theme}><CssBaseline />
-    <Box className="entrenos-root" sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
+    <Box className="entrenos-root" style={{
+      '--en-primary': palette.primary,
+      '--en-accent': palette.accent,
+      '--en-paper': palette.paper,
+      '--en-ink': palette.text,
+      '--en-border': palette.border,
+      '--en-cream': palette.background
+    } as CSSProperties} sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
       {!inApp ? <>
         <AppBar elevation={0} position="static" color="transparent" className="landing-header">
           <Toolbar sx={{ maxWidth: 1200, width: '100%', mx: 'auto', justifyContent: 'space-between', py: 1 }}>
@@ -288,8 +295,8 @@ export default function App() {
           </Toolbar>
         </AppBar>
         <Container maxWidth={false} sx={{ maxWidth: '1500px', px: { xs: 2, sm: 3, lg: 5 }, pt: { xs: 3, md: 4 }, pb: { xs: 12, md: 5 } }}>
-          {demo && <Alert severity="info" sx={{ mb: 2 }}>
-            Modo demostración: las tareas y los presupuestos son ejemplos locales, no datos guardados.
+          {(demo || page === 'home') && <Alert severity="info" sx={{ mb: 2 }}>
+            Las tareas, notas, recuerdos y finanzas mostrados son datos ilustrativos; todavía no se guardan en el servidor.
             <Button size="small" sx={{ ml: 1 }} onClick={signOut}>Salir de demo</Button>
           </Alert>}
           {message && <Alert severity="info" onClose={() => setMessage('')} sx={{ mb: 2 }}>{message}</Alert>}
