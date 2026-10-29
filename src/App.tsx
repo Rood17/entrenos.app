@@ -306,7 +306,7 @@ export default function App() {
                     {authMode === 'register' && <TextField required label="Nombre de usuario" value={username} onChange={e => setUsername(e.target.value)} />}
                     <TextField required type="email" label="Correo electrónico" value={email} onChange={e => setEmail(e.target.value)} />
                     <TextField required type="password" label="Contraseña" value={password} onChange={e => setPassword(e.target.value)} />
-                    {message && <Alert severity="info">{message}</Alert>}
+                    {message && <Alert severity={message.startsWith('Cuenta creada') ? 'success' : 'error'}>{message}</Alert>}
                     <Button disabled={loading} type="submit" variant="contained" size="large">
                       {loading ? 'Procesando…' : authMode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
                     </Button>
