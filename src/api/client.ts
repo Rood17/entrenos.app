@@ -22,10 +22,18 @@ export async function api<T>(path: string, options: RequestInit = {}, accessToke
 
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
-    const detail = typeof body === 'object' && body !== null && 'detail' in body
-      ? String((body as { detail: unknown }).detail)
-      : '';
-    throw new Error(detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+    const flatten = (value: unknown): string[] => {
+      if (typeof value === 'string') return [value];
+      if (Array.isArray(value)) return value.flatMap(flatten);
+      if (value && typeof value === 'object') {
+        return Object.entries(value as Record<string, unknown>).flatMap(([key, val]) =>
+          flatten(val).map(text => key === 'detail' || key === 'non_field_errors' ? text : `${key}: ${text}`)
+        );
+      }
+      return [];
+    };
+    const errors = flatten(body);
+    throw new Error(errors.length ? errors.join(' · ') : `El servidor respondió con un error (HTTP ${response.status}).`);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
