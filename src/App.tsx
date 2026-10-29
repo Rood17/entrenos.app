@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
-  Alert, AppBar, Avatar, Box, Button, Card, CardContent, Checkbox, FormControlLabel, Chip, Container,
+  Alert, AppBar, Autocomplete, Avatar, Box, Button, Card, CardContent, Checkbox, FormControlLabel, Chip, Container,
   CssBaseline, Divider, IconButton, LinearProgress, MenuItem, Stack,
   Tab, Tabs, TextField, ThemeProvider, Toolbar, Typography, useMediaQuery
 } from '@mui/material';
 import {
   AddRounded, ArrowBackRounded, CalendarMonthRounded, CheckCircleRounded,
   ChecklistRounded, ContentCopyRounded, DarkModeRounded, FavoriteRounded,
-  HomeRounded, LightModeRounded, LockOutlineRounded, LogoutRounded,
+  HomeRounded, LocalFireDepartmentRounded, LightModeRounded, LockOutlineRounded, LogoutRounded,
   NotificationsNoneRounded, PersonOutlineRounded, PushPinRounded,
   SettingsRounded, ShoppingCartRounded, WalletRounded
 } from '@mui/icons-material';
@@ -18,10 +18,10 @@ import { brand, themes, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
 
-type Page = 'home' | 'tasks' | 'budget' | 'profile' | 'pair';
+type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
-type UserProfile = { id: number; app_name: string; first_name: string; email: string };
+type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
 type CoupleData = { couple: { id: number; members: number[]; display_name: string; image_url: string } | null };
@@ -101,6 +101,7 @@ export default function App() {
   const [ruleTag, setRuleTag] = useState('Convivencia');
   const personalizedName = (paired ? sharedName : appName).trim() || 'Nuestro espacio';
   const [email, setEmail] = useState('');
+  const [personName, setPersonName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -139,6 +140,7 @@ export default function App() {
         setAccessToken(restored);
         setDemo(false);
         setShowAuth(false);
+        setPersonName(profile.first_name?.trim() || profile.username || profile.email.split('@')[0]);
         setAppName(profile.app_name || '');
         setNameDraft(profile.app_name || '');
         setPaired(Boolean(relation.couple));
@@ -241,6 +243,7 @@ export default function App() {
         rememberSession(result.access, result.refresh, rememberMe);
         setAccessToken(result.access); setDemo(false); setShowAuth(false);
         const profile = await api<UserProfile>('/auth/me/', {}, result.access);
+        setPersonName(profile.first_name?.trim() || profile.username || profile.email.split('@')[0]);
         setAppName(profile.app_name || '');
         setNameDraft(profile.app_name || '');
         const relation = await api<CoupleData>('/couples/me/', {}, result.access);
@@ -376,13 +379,14 @@ export default function App() {
     clearSession();
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
-    setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
+    setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
 
   const nav = [
     { value: 'home' as const, label: 'Inicio', icon: <HomeRounded /> },
     { value: 'tasks' as const, label: 'Tareas', icon: <ChecklistRounded /> },
     { value: 'budget' as const, label: 'Nuestro hogar', icon: <HomeRounded /> },
+    { value: 'fire' as const, label: 'Fuego sagrado', icon: <LocalFireDepartmentRounded /> },
     { value: 'profile' as const, label: 'Configurar', icon: <SettingsRounded /> }
   ];
 
@@ -391,6 +395,10 @@ export default function App() {
     completed: task.done, priority: task.priority === 'Alta' ? 'high' as const : task.priority === 'Baja' ? 'low' as const : 'medium' as const
   })) : items.filter(item => item.kind === 'task');
   const visibleNotes = demo ? [] : items.filter(item => item.kind === 'note');
+  const availableTags = Array.from(new Set([
+    'Relación', 'Casa', 'Planes',
+    ...items.map(item => item.tag?.trim()).filter((tag): tag is string => Boolean(tag)),
+  ])).sort((a,b)=>a.localeCompare(b,'es'));
   const visibleRules = demo ? [] : items.filter(item => item.kind === 'rule');
   const tasksContent = <Stack spacing={0.5}>
     {visibleTasks.length === 0 && <Typography variant="body2" color="text.secondary">
@@ -614,21 +622,22 @@ export default function App() {
           {page === 'home' && <Box className="dashboard-layout">
             <Box className="dashboard-main">
               <Box sx={{ mb: 2 }}>
-                <Typography color="text.secondary">Hola, {email ? email.split('@')[0] : 'bienvenidos'}</Typography>
-                {paired && sharedImage && <Box component="img" alt="Imagen de nuestro espacio"
-                  src={sharedImage} sx={{ width: '100%', height: { xs: 150, md: 220 }, objectFit: 'cover', borderRadius: 3, my: 2 }} />}
-                <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>
-                  {scope === 'personal' && !demo ? (appName.trim() || 'Mi espacio') : personalizedName}
-                </Typography>
-                <Typography color="text.secondary">Todo es mejor cuando lo compartimos.</Typography>
+                <Typography color="text.secondary">Hola, {personName || (demo ? 'bienvenidos' : 'bienvenido')}</Typography>
+                <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>{personName ? `Qué gusto verte, ${personName}` : 'Tu espacio para crecer'}</Typography>
+                <Typography color="text.secondary">Un lugar para construir lo que importa.</Typography>
               </Box>
-              <Box className="anniversary-hero">
+              <Box className="anniversary-hero" sx={paired && sharedImage ? {
+                backgroundImage: `linear-gradient(135deg, rgba(45,30,30,.65), rgba(45,30,30,.28)), url("${sharedImage.replace(/"/g, '%22')}")`,
+                backgroundSize: 'cover', backgroundPosition: 'center',
+              } : undefined}>
                 <Box className="anniversary-content">
                   <FavoriteRounded />
-                  <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: '1.25rem' }}>Faltan</Typography>
-                  <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: { xs: '2.7rem', sm: '3.8rem' }, lineHeight: 1.2 }}>127 días</Typography>
-                  <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: '1.35rem' }}>para nuestro aniversario</Typography>
-                  <Typography variant="body2" sx={{ mt: 1 }}>Fecha de ejemplo · Configurable próximamente</Typography>
+                  <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: { xs: '2.2rem', sm: '3.1rem' }, lineHeight: 1.15 }}>
+                    {paired ? sharedName.trim() || 'Nuestro espacio' : appName.trim() || 'Mi espacio'}
+                  </Typography>
+                  <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: { xs: '1.15rem', sm: '1.45rem' }, mt: 1, maxWidth: 500 }}>
+                    «Que nunca nos falten razones para escucharnos, elegirnos y crecer juntos».
+                  </Typography>
                 </Box>
               </Box>
               <Panel title="Borrador de pensamientos" icon={<PushPinRounded />}>
@@ -646,7 +655,11 @@ export default function App() {
                 </Box>
                 {!demo && <Stack spacing={1} sx={{ mt: 2 }}>
                   <TextField size="small" label="Idea o tema para conversar" value={noteTitle} onChange={e => setNoteTitle(e.target.value)} inputProps={{ maxLength: 150 }} />
-                  <TextField size="small" label="Etiqueta (Relación, Casa, Planes u otra)" value={noteTag} onChange={e => setNoteTag(e.target.value)} inputProps={{ maxLength: 60 }} />
+                  <Autocomplete freeSolo options={availableTags} value={noteTag}
+                    onChange={(_, value) => setNoteTag(value || '')}
+                    onInputChange={(_, value) => setNoteTag(value.slice(0, 60))}
+                    renderInput={params => <TextField {...params} size="small" label="Buscar o crear etiqueta"
+                      helperText="Escribe una etiqueta nueva o elige una existente." />} />
                   <TextField size="small" multiline minRows={2} label="¿Qué te gustaría hablar o negociar?" value={noteContent} onChange={e => setNoteContent(e.target.value)} />
                   <Stack direction="row" spacing={1}>
                     <Button variant="outlined" disabled={loading || !noteTitle.trim()} onClick={() => void addItem('note')}>
@@ -666,7 +679,8 @@ export default function App() {
                 action={<Button size="small" onClick={() => navigate('tasks')}>Ver todas</Button>}>
                 {tasksContent}
               </Panel>
-              <Panel title="Nuestra próxima cita" icon={<CalendarMonthRounded />}>
+              <Panel title="Nuestra próxima cita" icon={<CalendarMonthRounded />}
+                action={<Chip label="Próximamente" size="small" />}>
                 <Typography fontWeight={600}>Un momento para nosotros</Typography>
                 <Typography variant="body2" color="text.secondary">Aquí aparecerán nuestras próximas actividades.</Typography>
               </Panel>
@@ -676,6 +690,13 @@ export default function App() {
                 <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
                   <Chip label="Limpieza" size="small" /><Chip label="Acuerdos" size="small" />
                   <Chip label="Compras del hogar" size="small" />
+                </Stack>
+              </Panel>
+              <Panel title="Nuestro fuego sagrado" icon={<LocalFireDepartmentRounded />}
+                action={<Button size="small" onClick={() => navigate('fire')}>Explorar</Button>}>
+                <Typography variant="body2" color="text.secondary">Metas, proyectos y decisiones que alimentan nuestra vida juntos.</Typography>
+                <Stack direction="row" gap={1} sx={{ mt: 2 }}>
+                  <Chip label="Finanzas" size="small" /><Chip label="Proyectos" size="small" />
                 </Stack>
               </Panel>
             </Box>
@@ -735,6 +756,21 @@ export default function App() {
                 <Typography color="text.secondary" variant="body2">
                   Ingresos y salarios serán opcionales. Cada persona decidirá si comparte sus cifras. No asumiremos que ambos tienen ingresos.
                 </Typography>
+              </Panel>
+            </Box>
+          </Box>}
+          {page === 'fire' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
+            <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 1 }}>
+              <LocalFireDepartmentRounded color="primary" sx={{ fontSize: 36 }} />
+              <Typography variant="h4">Nuestro fuego sagrado</Typography>
+            </Stack>
+            <Typography color="text.secondary" sx={{ mb: 3 }}>Ideas y decisiones para construir lo que soñamos juntos.</Typography>
+            <Box className="two-column">
+              <Panel title="Finanzas" icon={<WalletRounded />} action={<Chip label="Próximamente" size="small" />}>
+                <Typography variant="body2" color="text.secondary">Ingresos, gastos, inversiones y compras. Cada persona decidirá qué información comparte; no es necesario que ambos tengan ingresos.</Typography>
+              </Panel>
+              <Panel title="Metas y proyectos" icon={<FavoriteRounded />} action={<Chip label="Próximamente" size="small" />}>
+                <Typography variant="body2" color="text.secondary">Sueños, planes y objetivos que quieran construir juntos.</Typography>
               </Panel>
             </Box>
           </Box>}
