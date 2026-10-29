@@ -725,25 +725,17 @@ export default function App() {
             <Typography variant="h4" gutterBottom>Nuestro hogar</Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>Pequeños acuerdos para construir una convivencia más sencilla.</Typography>
             <Box className="two-column">
-              <Panel title="Limpieza y responsabilidades" icon={<ChecklistRounded />}>
-                <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-                  Las tareas del hogar se organizan con la lista de tareas de tu espacio {scope === 'shared' ? 'compartido' : 'individual'}.
+              <Panel title="Limpieza y responsabilidades" icon={<ChecklistRounded />}
+                action={<Chip size="small" label="Próximamente" />}>
+                <Typography color="text.secondary" variant="body2">
+                  Aquí organizaremos las tareas de limpieza, turnos y responsabilidades del hogar.
                 </Typography>
-                <Button variant="outlined" onClick={() => navigate('tasks')}>Ver tareas de limpieza</Button>
               </Panel>
-              <Panel title="Normas y acuerdos de convivencia" icon={<FavoriteRounded />}>
-                {visibleRules.length ? visibleRules.map(rule => <Box key={rule.id} sx={{ py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Chip size="small" label={rule.tag || 'Convivencia'} sx={{ mb: 1 }} />
-                  <Typography fontWeight={700}>{rule.title}</Typography>
-                  <Typography color="text.secondary" variant="body2">{rule.content}</Typography>
-                  <Button size="small" color="error" onClick={() => void removeItem(rule)}>Eliminar</Button>
-                </Box>) : <Typography color="text.secondary">Todavía no hay acuerdos. Pueden empezar por algo sencillo.</Typography>}
-                {!demo && <Stack spacing={1.5} sx={{ mt: 2 }}>
-                  <TextField label="Acuerdo" size="small" value={ruleTitle} onChange={e => setRuleTitle(e.target.value)} />
-                  <TextField label="Detalles" size="small" multiline minRows={2} value={ruleContent} onChange={e => setRuleContent(e.target.value)} />
-                  <TextField label="Etiqueta" size="small" value={ruleTag} onChange={e => setRuleTag(e.target.value)} />
-                  <Button variant="contained" disabled={loading || !ruleTitle.trim()} onClick={() => void saveRule()}>Guardar acuerdo</Button>
-                </Stack>}
+              <Panel title="Normas y acuerdos de convivencia" icon={<FavoriteRounded />}
+                action={<Chip size="small" label="Próximamente" />}>
+                <Typography color="text.secondary" variant="body2">
+                  Un espacio para definir juntos acuerdos, límites y reglas que faciliten la convivencia.
+                </Typography>
               </Panel>
               <Panel title="Compras y gastos del hogar" icon={<ShoppingCartRounded />}
                 action={<Chip size="small" label="Próximamente" />}>
