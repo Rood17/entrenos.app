@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -22,6 +22,8 @@ type Page = 'home' | 'tasks' | 'budget' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type UserProfile = { id: number; app_name: string; first_name: string; email: string };
+type WorkspaceItem = { id: number; kind: 'task' | 'note'; title: string; content: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
+type WorkspaceScope = 'personal' | 'shared';
 type CoupleData = { couple: { id: number; members: number[] } | null };
 const initialTasks: Task[] = [
   { name: 'Lavar la ropa', priority: 'Alta', done: false },
@@ -102,16 +104,68 @@ export default function App() {
   const [newTask, setNewTask] = useState('');
   const [budgetTab, setBudgetTab] = useState(0);
   const [taskTab, setTaskTab] = useState(0);
+  const [scope, setScope] = useState<WorkspaceScope>('personal');
+  const [items, setItems] = useState<WorkspaceItem[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [itemError, setItemError] = useState('');
+  const scopeLabel = scope === 'personal' ? 'Mi espacio' : 'Nuestro espacio';
   const inApp = demo || Boolean(accessToken);
   const palette = themes[themeName];
 
   function navigate(next: Page) {
-    if (!demo && accessToken && !paired && next !== 'pair' && next !== 'profile') {
-      setPage('pair'); setMessage('Primero vincula tu cuenta con tu pareja.');
-      return;
-    }
     setMessage(''); setPage(next);
   }
+
+  useEffect(() => {
+    if (!accessToken || demo || (scope === 'shared' && !paired)) return;
+    let active = true;
+    setItemsLoading(true);
+    setItemError('');
+    api<WorkspaceItem[]>(`/workspace/items/?scope=${scope}`, {}, accessToken)
+      .then(data => { if (active) setItems(data); })
+      .catch(error => { if (active) setItemError(error instanceof Error ? error.message : 'No se pudieron cargar los datos.'); })
+      .finally(() => { if (active) setItemsLoading(false); });
+    return () => { active = false; };
+  }, [accessToken, scope, paired, demo]);
+
+  async function addItem(kind: 'task' | 'note') {
+    const title = kind === 'task' ? newTask.trim() : noteTitle.trim();
+    if (!title) return;
+    if (demo) {
+      setMessage('Para guardar información real, crea una cuenta e inicia sesión.');
+      return;
+    }
+    setLoading(true); setItemError('');
+    try {
+      const result = await api<WorkspaceItem>(`/workspace/items/?scope=${scope}`, {
+        method: 'POST',
+        body: JSON.stringify({ kind, title, content: kind === 'note' ? noteContent : '', priority: 'medium' }),
+      }, accessToken);
+      setItems(old => [result, ...old]);
+      if (kind === 'task') setNewTask('');
+      else { setNoteTitle(''); setNoteContent(''); }
+    } catch (error) { setItemError(error instanceof Error ? error.message : 'No se pudo guardar.'); }
+    finally { setLoading(false); }
+  }
+
+  async function toggleItem(item: WorkspaceItem) {
+    try {
+      const updated = await api<WorkspaceItem>(`/workspace/items/${item.id}/?scope=${scope}`, {
+        method: 'PATCH', body: JSON.stringify({ completed: !item.completed }),
+      }, accessToken);
+      setItems(old => old.map(x => x.id === item.id ? updated : x));
+    } catch (error) { setItemError(error instanceof Error ? error.message : 'No se pudo actualizar.'); }
+  }
+
+  async function removeItem(item: WorkspaceItem) {
+    try {
+      await api<unknown>(`/workspace/items/${item.id}/?scope=${scope}`, { method: 'DELETE' }, accessToken);
+      setItems(old => old.filter(x => x.id !== item.id));
+    } catch (error) { setItemError(error instanceof Error ? error.message : 'No se pudo eliminar.'); }
+  }
+
 
   function goHome() {
     setMessage('');
@@ -137,7 +191,7 @@ export default function App() {
         setNameDraft(profile.app_name || '');
         const relation = await api<CoupleData>('/couples/me/', {}, result.access);
         const linked = Boolean(relation.couple);
-        setPaired(linked); setPage(linked ? 'home' : 'pair');
+        setPaired(linked); setScope('personal'); setPage(pendingInvite && !linked ? 'pair' : 'home');
         if (!linked && pendingInvite) setInviteCode(pendingInvite);
       }
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No fue posible conectarse.'); }
@@ -163,7 +217,7 @@ export default function App() {
       await api('/couples/invitations/accept/', {
         method: 'POST', body: JSON.stringify({ code: inviteCode.trim(), password: acceptPassword })
       }, accessToken);
-      setPaired(true); setPage('home'); setMessage('¡Ya están vinculados!');
+      setPaired(true); setScope('shared'); setPage('home'); setMessage('¡Ya están vinculados!');
       setAcceptPassword('');
       if (window.location.hash.startsWith('#invite=')) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo aceptar la invitación.'); }
@@ -197,7 +251,7 @@ export default function App() {
   function signOut() {
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
-    setAppName(''); setNameDraft('');
+    setAppName(''); setNameDraft(''); setItems([]); setScope('personal');
   }
 
   const nav = [
@@ -207,24 +261,28 @@ export default function App() {
     { value: 'profile' as const, label: 'Perfil', icon: <PersonOutlineRounded /> }
   ];
 
+  const visibleTasks = demo ? initialTasks.map((task, index) => ({
+    id: index + 1, kind: 'task' as const, title: task.name, content: '',
+    completed: task.done, priority: task.priority === 'Alta' ? 'high' as const : task.priority === 'Baja' ? 'low' as const : 'medium' as const
+  })) : items.filter(item => item.kind === 'task');
+  const visibleNotes = demo ? [] : items.filter(item => item.kind === 'note');
   const tasksContent = <Stack spacing={0.5}>
-    {tasks.map((task, i) => <Stack key={task.name + i} direction="row" gap={1} alignItems="center" className="task-row">
-      <IconButton aria-label={task.done ? 'Marcar pendiente' : 'Completar tarea'}
-        onClick={() => setTasks(list => list.map((item, index) =>
-          index === i ? { ...item, done: !item.done } : item))} size="small" color={task.done ? 'success' : 'default'}>
-        {task.done ? <CheckCircleRounded /> : <Box className="task-circle" />}
+    {visibleTasks.length === 0 && <Typography variant="body2" color="text.secondary">
+      Aún no tienes tareas. Agrega la primera para empezar a organizarte.
+    </Typography>}
+    {visibleTasks.map(task => <Stack key={task.id} direction="row" gap={1} alignItems="center" className="task-row">
+      <IconButton aria-label={task.completed ? 'Marcar pendiente' : 'Completar tarea'} disabled={demo}
+        onClick={() => void toggleItem(task)} size="small" color={task.completed ? 'success' : 'default'}>
+        {task.completed ? <CheckCircleRounded /> : <Box className="task-circle" />}
       </IconButton>
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="body2" sx={{ textDecoration: task.done ? 'line-through' : 'none', fontWeight: 600 }}>
-          {task.name}
+        <Typography variant="body2" sx={{ textDecoration: task.completed ? 'line-through' : 'none', fontWeight: 600 }}>
+          {task.title}
         </Typography>
-        <Typography variant="caption" color="text.secondary">{task.done ? 'Ayer' : 'Hoy'}</Typography>
       </Box>
-      <Chip size="small" label={task.priority}
-        color={task.priority === 'Alta' ? 'error' : task.priority === 'Media' ? 'warning' : 'success'}
+      <Chip size="small" label={task.priority === 'high' ? 'Alta' : task.priority === 'low' ? 'Baja' : 'Media'}
         variant="outlined" />
-      <Chip size="small" label={task.done ? 'Completado' : 'Pendiente'}
-        color={task.done ? 'success' : 'default'} />
+      {!demo && <Button color="error" size="small" onClick={() => void removeItem(task)}>Eliminar</Button>}
     </Stack>)}
   </Stack>;
 
@@ -341,6 +399,9 @@ export default function App() {
                 onClick={() => navigate(item.value)} sx={{ px: 2.5 }}>{item.label}</Button>)}
             </Stack>}
             {!desktop && <Box sx={{ flex: 1 }} />}
+            {!demo && <Button size="small" variant="outlined" onClick={() => navigate('pair')} sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
+              {paired ? 'Invitación' : 'Vincular pareja'}
+            </Button>}
             <IconButton aria-label="Cambiar tema" onClick={() => setThemeName(t => t === 'light' ? 'dark' : t === 'dark' ? 'premium' : 'light')}>
               {themeName === 'dark' ? <LightModeRounded /> : <DarkModeRounded />}
             </IconButton>
@@ -354,6 +415,21 @@ export default function App() {
             <Button size="small" sx={{ ml: 1 }} onClick={signOut}>Salir de demo</Button>
           </Alert>}
           {message && <Alert severity="info" onClose={() => setMessage('')} sx={{ mb: 2 }}>{message}</Alert>}
+          {itemError && <Alert severity="error" onClose={() => setItemError('')} sx={{ mb: 2 }}>{itemError}</Alert>}
+          {!demo && <Card sx={{ mb: 3 }}><CardContent sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Box sx={{ flex: 1 }}>
+              <Typography fontWeight={700}>{scopeLabel}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {paired ? (scope === 'personal' ? 'Solo tú puedes ver estos datos.' : 'Estos datos son visibles para ambos.') :
+                  'Tu espacio personal está activo. Puedes crear tareas y notas antes de vincularte.'}
+              </Typography>
+            </Box>
+            {paired ? <Stack direction="row" spacing={1}>
+              <Button size="small" variant={scope === 'personal' ? 'contained' : 'outlined'} onClick={() => setScope('personal')}>Individual</Button>
+              <Button size="small" variant={scope === 'shared' ? 'contained' : 'outlined'} onClick={() => setScope('shared')}>Compartido</Button>
+            </Stack> : <Button variant="outlined" onClick={() => navigate('pair')}>Invitar a mi pareja</Button>}
+          </CardContent></Card>}
+          {itemsLoading && <LinearProgress sx={{ mb: 2 }} />}
           {page === 'pair' && <Box sx={{ maxWidth: 600, mx: 'auto', mt: 3 }}>
             <Panel title="Vincularnos" icon={<FavoriteRounded />}>
               <Typography color="text.secondary" sx={{ mb: 2 }}>Conecta tu cuenta con la persona especial con quien compartirás este espacio.</Typography>
@@ -400,7 +476,9 @@ export default function App() {
             <Box className="dashboard-main">
               <Box sx={{ mb: 2 }}>
                 <Typography color="text.secondary">Hola,</Typography>
-                <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>{personalizedName}</Typography>
+                <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>
+                  {scope === 'personal' && !demo ? 'Mi espacio' : personalizedName}
+                </Typography>
                 <Typography color="text.secondary">Todo es mejor cuando lo compartimos.</Typography>
               </Box>
               <Box className="anniversary-hero">
@@ -414,10 +492,18 @@ export default function App() {
               </Box>
               <Panel title="Notas importantes" icon={<PushPinRounded />}>
                 <Box className="notes-grid">
-                  <Box className="note-card note-cream"><Typography sx={{ fontSize: 24 }}>♧</Typography><Typography fontWeight={700}>Tallas de ropa</Typography><Typography variant="body2">Una nota para recordar los detalles.</Typography></Box>
-                  <Box className="note-card note-pink"><Typography sx={{ fontSize: 24 }}>❀</Typography><Typography fontWeight={700}>Alergias</Typography><Typography variant="body2">Información importante para ambos.</Typography></Box>
-                  <Box className="note-card note-peach"><Typography sx={{ fontSize: 24 }}>♡</Typography><Typography fontWeight={700}>Ideas de regalo</Typography><Typography variant="body2">Pequeñas cosas que nos hacen felices.</Typography></Box>
+                  {demo ? <Typography color="text.secondary">En tu cuenta podrás crear y editar tus notas personales.</Typography> :
+                  visibleNotes.length ? visibleNotes.map(note => <Box key={note.id} className="note-card note-cream">
+                    <Typography fontWeight={700}>{note.title}</Typography>
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', flex: 1 }}>{note.content}</Typography>
+                    <Button size="small" color="error" onClick={() => void removeItem(note)}>Eliminar</Button>
+                  </Box>) : <Typography color="text.secondary">Aún no tienes notas guardadas.</Typography>}
                 </Box>
+                {!demo && <Stack spacing={1} sx={{ mt: 2 }}>
+                  <TextField size="small" label="Título de la nota" value={noteTitle} onChange={e => setNoteTitle(e.target.value)} inputProps={{ maxLength: 150 }} />
+                  <TextField size="small" multiline minRows={2} label="Contenido" value={noteContent} onChange={e => setNoteContent(e.target.value)} />
+                  <Button variant="outlined" disabled={loading || !noteTitle.trim()} onClick={() => void addItem('note')}>Guardar nota</Button>
+                </Stack>}
               </Panel>
               <Panel title="Nuestros recuerdos" icon={<FavoriteRounded />}>
                 <Box className="memory-strip">
@@ -457,9 +543,8 @@ export default function App() {
                 {tasksContent}
                 <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
                   <TextField fullWidth size="small" label="Nueva tarea" value={newTask} onChange={e => setNewTask(e.target.value)} />
-                  <Button variant="contained" aria-label="Agregar tarea" onClick={() => {
-                    if (newTask.trim()) { setTasks(items => [...items, { name: newTask.trim(), done: false, priority: 'Media' }]); setNewTask(''); }
-                  }}><AddRounded /></Button>
+                  <Button variant="contained" disabled={loading || demo || !newTask.trim()} aria-label="Agregar tarea"
+                    onClick={() => void addItem('task')}><AddRounded /></Button>
                 </Stack>
               </Panel>
               <Panel title="Lista del supermercado" icon={<ShoppingCartRounded />}>
