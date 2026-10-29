@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   Alert, AppBar, Avatar, Box, Button, Card, CardContent, Chip, Container,
@@ -77,7 +78,8 @@ export default function App() {
   const desktop = useMediaQuery(theme.breakpoints.up('md'));
   const [page, setPage] = useState<Page>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const [showAuth, setShowAuth] = useState(false);
+  const [pendingInvite] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('invite') || '');
+  const [showAuth, setShowAuth] = useState(Boolean(new URLSearchParams(window.location.hash.slice(1)).get('invite')));
   const [accessToken, setAccessToken] = useState('');
   const [demo, setDemo] = useState(false);
   const [paired, setPaired] = useState(false);
@@ -91,6 +93,11 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [generatedCode, setGeneratedCode] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [acceptPassword, setAcceptPassword] = useState('');
+  const invitationLink = generatedCode
+    ? `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(generatedCode)}`
+    : '';
   const [tasks, setTasks] = useState(initialTasks);
   const [newTask, setNewTask] = useState('');
   const [budgetTab, setBudgetTab] = useState(0);
@@ -131,6 +138,7 @@ export default function App() {
         const relation = await api<CoupleData>('/couples/me/', {}, result.access);
         const linked = Boolean(relation.couple);
         setPaired(linked); setPage(linked ? 'home' : 'pair');
+        if (!linked && pendingInvite) setInviteCode(pendingInvite);
       }
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No fue posible conectarse.'); }
     finally { setLoading(false); }
@@ -139,8 +147,12 @@ export default function App() {
   async function createInvitation() {
     setLoading(true); setMessage('');
     try {
-      const result = await api<{ code: string }>('/couples/invitations/', { method: 'POST' }, accessToken);
+      if (invitePassword.length < 8) { setMessage('La contraseña de invitación requiere al menos 8 caracteres.'); return; }
+      const result = await api<{ code: string }>('/couples/invitations/', {
+        method: 'POST', body: JSON.stringify({ password: invitePassword }),
+      }, accessToken);
       setGeneratedCode(result.code);
+      setInvitePassword('');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No fue posible generar el código.'); }
     finally { setLoading(false); }
   }
@@ -149,9 +161,11 @@ export default function App() {
     setLoading(true); setMessage('');
     try {
       await api('/couples/invitations/accept/', {
-        method: 'POST', body: JSON.stringify({ code: inviteCode.trim() })
+        method: 'POST', body: JSON.stringify({ code: inviteCode.trim(), password: acceptPassword })
       }, accessToken);
       setPaired(true); setPage('home'); setMessage('¡Ya están vinculados!');
+      setAcceptPassword('');
+      if (window.location.hash.startsWith('#invite=')) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo aceptar la invitación.'); }
     finally { setLoading(false); }
   }
@@ -182,7 +196,7 @@ export default function App() {
 
   function signOut() {
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
-    setPassword(''); setGeneratedCode(''); setPage('home'); setMessage('');
+    setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
     setAppName(''); setNameDraft('');
   }
 
@@ -344,20 +358,41 @@ export default function App() {
             <Panel title="Vincularnos" icon={<FavoriteRounded />}>
               <Typography color="text.secondary" sx={{ mb: 2 }}>Conecta tu cuenta con la persona especial con quien compartirás este espacio.</Typography>
               <Stack spacing={2}>
-                <Button disabled={loading} variant="contained" onClick={() => void createInvitation()}>Generar código de invitación</Button>
+                <TextField type="password" label="Contraseña para proteger la invitación"
+                  autoComplete="new-password" value={invitePassword}
+                  onChange={e => setInvitePassword(e.target.value)}
+                  helperText="Mínimo 8 caracteres. No es tu contraseña de inicio de sesión."
+                  inputProps={{ minLength: 8, maxLength: 128 }} fullWidth />
+                <Button disabled={loading || invitePassword.length < 8} variant="contained" onClick={() => void createInvitation()}>
+                  Generar QR y enlace protegido
+                </Button>
                 {generatedCode && <Box className="invitation-code">
-                  <Typography variant="caption">Comparte este código en privado</Typography>
+                  <Typography variant="caption">Comparte el enlace o el QR con tu pareja</Typography>
+                  <Box sx={{ bgcolor: '#fff', width: 'fit-content', mx: 'auto', my: 2, p: 2, borderRadius: 2 }}>
+                    <QRCodeSVG value={invitationLink} size={184} marginSize={2} />
+                  </Box>
+                  <Button variant="outlined" startIcon={<ContentCopyRounded />}
+                    onClick={() => { void navigator.clipboard.writeText(invitationLink).then(() => setMessage('Enlace copiado. Comparte la contraseña por un canal separado.')).catch(() => setMessage('No fue posible copiar el enlace.')); }}>
+                    Copiar enlace
+                  </Button>
+                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere', my: 1 }}>{invitationLink}</Typography>
                   <Stack direction="row" alignItems="center" justifyContent="center">
                     <Typography sx={{ overflowWrap: 'anywhere', fontWeight: 700 }}>{generatedCode}</Typography>
                     <IconButton aria-label="Copiar código" onClick={() => { void navigator.clipboard?.writeText(generatedCode); }}><ContentCopyRounded /></IconButton>
                   </Stack>
                   <Typography variant="caption" color="text.secondary">Válido durante siete días.</Typography>
                 </Box>}
-                <Divider>O introduce el código recibido</Divider>
+                <Divider>¿Recibiste una invitación?</Divider>
                 <TextField value={inviteCode} onChange={e => setInviteCode(e.target.value)}
                   label="Código de invitación" fullWidth />
-                <Button variant="outlined" disabled={loading || !inviteCode.trim()} onClick={() => void acceptInvitation()}>Vincular cuentas</Button>
-                <Alert icon={<LockOutlineRounded />} severity="info">Los módulos compartidos se habilitan cuando ambas cuentas están vinculadas.</Alert>
+                <TextField type="password" label="Contraseña de la invitación" value={acceptPassword}
+                  autoComplete="off" onChange={e => setAcceptPassword(e.target.value)}
+                  helperText="Solicita la contraseña a quien te invitó." fullWidth />
+                <Button variant="outlined" disabled={loading || !inviteCode.trim() || !acceptPassword}
+                  onClick={() => void acceptInvitation()}>Confirmar y vincular cuentas</Button>
+                <Alert icon={<LockOutlineRounded />} severity="info">
+                  El enlace no incluye la contraseña. Las invitaciones vencen a los siete días y solo se pueden utilizar una vez.
+                </Alert>
               </Stack>
             </Panel>
           </Box>}
