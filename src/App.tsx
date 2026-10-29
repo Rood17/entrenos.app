@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
-  Alert, AppBar, Autocomplete, Avatar, Box, Button, Card, CardContent, Checkbox, FormControlLabel, Chip, Container,
-  CssBaseline, Divider, IconButton, LinearProgress, MenuItem, Stack,
+  Alert, AppBar, Autocomplete, Avatar, Box, Button, Card, CardContent, Checkbox, FormControlLabel, Chip, Container, Dialog, DialogTitle, DialogContent, DialogActions,
+  CssBaseline, Divider, IconButton, LinearProgress, Menu, MenuItem, Stack,
   Tab, Tabs, TextField, ThemeProvider, Toolbar, Typography, useMediaQuery
 } from '@mui/material';
 import {
@@ -21,7 +21,7 @@ import './styles.css';
 type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'finances' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
-type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string };
+type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
 type MonthlyNeed = { id: number; name: string; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
@@ -104,6 +104,12 @@ export default function App() {
   const personalizedName = (paired ? sharedName : appName).trim() || 'Nuestro espacio';
   const [email, setEmail] = useState('');
   const [personName, setPersonName] = useState('');
+  const [profileNameDraft, setProfileNameDraft] = useState('');
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState<HTMLElement | null>(null);
+  const [settingsSection, setSettingsSection] = useState<'profile' | 'space'>('space');
+  const [coverDialogOpen, setCoverDialogOpen] = useState(false);
+  const [personalCoverUrl, setPersonalCoverUrl] = useState('');
+  const [personalCoverDraft, setPersonalCoverDraft] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -151,6 +157,9 @@ export default function App() {
         setDemo(false);
         setShowAuth(false);
         setPersonName(profile.first_name?.trim() || profile.username || profile.email.split('@')[0]);
+        setProfileNameDraft(profile.first_name || '');
+        setPersonalCoverUrl(profile.hero_image_url || '');
+        setPersonalCoverDraft(profile.hero_image_url || '');
         setAppName(profile.app_name || '');
         setNameDraft(profile.app_name || '');
         setPaired(Boolean(relation.couple));
@@ -434,19 +443,64 @@ export default function App() {
     } finally { setLoading(false); }
   }
 
+  function openSettings(section: 'profile' | 'space') {
+    setAccountMenuAnchor(null);
+    setSettingsSection(section);
+    navigate('profile');
+  }
+
+  async function saveProfileName() {
+    if (!accessToken || !profileNameDraft.trim()) return;
+    setLoading(true); setMessage('');
+    try {
+      const result = await api<UserProfile>('/auth/me/', {
+        method: 'PATCH', body: JSON.stringify({ first_name: profileNameDraft.trim() }),
+      }, accessToken);
+      setPersonName(result.first_name?.trim() || result.username);
+      setProfileNameDraft(result.first_name || '');
+      setMessage('Nombre de perfil actualizado.');
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'No se pudo guardar el perfil.'); }
+    finally { setLoading(false); }
+  }
+
+  async function saveCoverPhoto() {
+    if (demo || !accessToken) return;
+    setLoading(true); setMessage('');
+    try {
+      if (paired) {
+        const result = await api<{ image_url: string }>('/couples/me/', {
+          method: 'PATCH', body: JSON.stringify({ image_url: imageDraft.trim() }),
+        }, accessToken);
+        setSharedImage(result.image_url || '');
+        setImageDraft(result.image_url || '');
+      } else {
+        const result = await api<UserProfile>('/auth/me/', {
+          method: 'PATCH', body: JSON.stringify({ hero_image_url: personalCoverDraft.trim() }),
+        }, accessToken);
+        setPersonalCoverUrl(result.hero_image_url || '');
+        setPersonalCoverDraft(result.hero_image_url || '');
+      }
+      setCoverDialogOpen(false);
+      setMessage('Portada actualizada correctamente.');
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'No se pudo cambiar la portada.'); }
+    finally { setLoading(false); }
+  }
+
   function signOut() {
     clearSession();
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
-    setMonthlyNeeds([]); resetNeedForm(); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
+    setMonthlyNeeds([]); resetNeedForm(); setPersonalCoverUrl(''); setPersonalCoverDraft('');
+    setAccountMenuAnchor(null); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
 
-  const nav = [
-    { value: 'home' as const, label: 'Inicio', icon: <HomeRounded /> },
-    { value: 'tasks' as const, label: 'Tareas', icon: <ChecklistRounded /> },
+  const desktopNav = [
     { value: 'budget' as const, label: 'Nuestro hogar', icon: <HomeRounded /> },
     { value: 'fire' as const, label: 'Fuego sagrado', icon: <LocalFireDepartmentRounded /> },
-    { value: 'profile' as const, label: 'Configurar', icon: <SettingsRounded /> }
+  ];
+  const mobileNav = [
+    { value: 'home' as const, label: 'Inicio', icon: <HomeRounded /> },
+    ...desktopNav,
   ];
 
   const visibleTasks = demo ? initialTasks.map((task, index) => ({
@@ -586,30 +640,40 @@ export default function App() {
             <Box component="button" type="button" onClick={goHome} aria-label="Volver a inicio"
               sx={{ border: 0, background: 'none', color: 'text.primary', cursor: 'pointer',
                 minHeight: 44, display: 'flex', alignItems: 'center', gap: 1 }}>
-              <FavoriteRounded color="primary" />
+              <Box component="img" src={themeName === 'dark' ? brand.assets.dark : brand.assets.light}
+                alt="" sx={{ width: 38, height: 38, objectFit: 'contain' }} />
               <Typography variant="h6" sx={{ fontSize: { xs: '1.05rem', sm: '1.3rem' },
                 maxWidth: { xs: 155, sm: 240 }, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {personalizedName}
               </Typography>
             </Box>
             {desktop && <Stack direction="row" gap={1} sx={{ flex: 1, justifyContent: 'center' }}>
-              {nav.map(item => <Button key={item.value} startIcon={item.icon}
-                variant={page === item.value ? 'contained' : 'text'}
+              {desktopNav.map(item => <Button key={item.value} startIcon={item.icon}
+                variant={page === item.value || (page === 'finances' && item.value === 'fire') ? 'contained' : 'text'}
                 onClick={() => navigate(item.value)} sx={{ px: 2.5 }}>{item.label}</Button>)}
             </Stack>}
             {!desktop && <Box sx={{ flex: 1 }} />}
-            {!demo && <Button size="small" variant="outlined" onClick={() => navigate('pair')} sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
-              {paired ? 'Invitación' : 'Vincular pareja'}
+            {!demo && !paired && <Button size="small" variant="outlined"
+              onClick={() => navigate('pair')} sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
+              Vincular pareja
             </Button>}
-            <Button size="small" variant="outlined" startIcon={<SettingsRounded />} onClick={() => navigate('profile')}
-              sx={{ display: { xs: 'none', md: 'inline-flex' } }}>Administrar</Button>
-            <IconButton aria-label="Administrar mi espacio" onClick={() => navigate('profile')}
-              sx={{ display: { xs: 'inline-flex', md: 'none' } }}><SettingsRounded /></IconButton>
             <IconButton aria-label="Cambiar tema" onClick={() => setThemeName(t => t === 'light' ? 'dark' : t === 'dark' ? 'premium' : 'light')}>
               {themeName === 'dark' ? <LightModeRounded /> : <DarkModeRounded />}
             </IconButton>
-            <IconButton aria-label="Notificaciones" onClick={() => setMessage('Las notificaciones estarán disponibles próximamente.')}><NotificationsNoneRounded /></IconButton>
-            <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main' }}><FavoriteRounded fontSize="small" /></Avatar>
+            <IconButton aria-label="Abrir menú de perfil" aria-controls={accountMenuAnchor ? 'profile-menu' : undefined}
+              aria-haspopup="true" onClick={e => setAccountMenuAnchor(e.currentTarget)}>
+              <Avatar sx={{ width: 35, height: 35, bgcolor: 'primary.main' }}>
+                <FavoriteRounded fontSize="small" />
+              </Avatar>
+            </IconButton>
+            <Menu id="profile-menu" open={Boolean(accountMenuAnchor)} anchorEl={accountMenuAnchor}
+              onClose={() => setAccountMenuAnchor(null)}>
+              <MenuItem onClick={() => openSettings('profile')}>Mi perfil</MenuItem>
+              <MenuItem onClick={() => openSettings('space')}>Configurar espacio</MenuItem>
+              {!demo && !paired && <MenuItem onClick={() => { setAccountMenuAnchor(null); navigate('pair'); }}>Vincular pareja</MenuItem>}
+              <Divider />
+              <MenuItem onClick={() => { setAccountMenuAnchor(null); signOut(); }}>Cerrar sesión</MenuItem>
+            </Menu>
           </Toolbar>
         </AppBar>
         <Container maxWidth={false} sx={{ maxWidth: '1500px', px: { xs: 2, sm: 3, lg: 5 }, pt: { xs: 3, md: 4 }, pb: { xs: 12, md: 5 } }}>
@@ -685,12 +749,17 @@ export default function App() {
                 <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>{personName ? `Qué gusto verte, ${personName}` : 'Tu espacio para crecer'}</Typography>
                 <Typography color="text.secondary">Un lugar para construir lo que importa.</Typography>
               </Box>
-              <Box className="anniversary-hero" sx={paired && sharedImage ? {
-                backgroundImage: `linear-gradient(135deg, rgba(45,30,30,.65), rgba(45,30,30,.28)), url("${sharedImage.replace(/"/g, '%22')}")`,
+              <Box className="anniversary-hero" sx={(paired ? sharedImage : personalCoverUrl) ? {
+                backgroundImage: `linear-gradient(135deg, rgba(45,30,30,.65), rgba(45,30,30,.28)), url("${(paired ? sharedImage : personalCoverUrl).replace(/"/g, '%22')}")`,
                 backgroundSize: 'cover', backgroundPosition: 'center',
               } : undefined}>
+                <Button size="small" className="cover-edit-button" variant="contained"
+                  onClick={() => setCoverDialogOpen(true)} disabled={demo}
+                  sx={{ position: 'absolute', right: 16, top: 16, zIndex: 3, bgcolor: 'rgba(40,27,28,.6)', color: 'white',
+                    '&:hover': { bgcolor: 'rgba(40,27,28,.85)' } }}>Cambiar foto</Button>
                 <Box className="anniversary-content">
-                  <FavoriteRounded />
+                  <Box component="img" src={themeName === 'dark' ? brand.assets.dark : brand.assets.light}
+                    alt="Símbolo de EntreNos" sx={{ width: 65, height: 65, objectFit: 'contain', mb: 1 }} />
                   <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: { xs: '2.2rem', sm: '3.1rem' }, lineHeight: 1.15 }}>
                     {paired ? sharedName.trim() || 'Nuestro espacio' : appName.trim() || 'Mi espacio'}
                   </Typography>
@@ -735,8 +804,10 @@ export default function App() {
             </Box>
             <Box className="dashboard-side">
               <Panel title="Actividades y tareas" icon={<ChecklistRounded />}
-                action={<Button size="small" onClick={() => navigate('tasks')}>Ver todas</Button>}>
-                {tasksContent}
+                action={<Chip label="Próximamente" size="small" />}>
+                <Typography variant="body2" color="text.secondary">
+                  Aquí organizaremos pendientes, actividades y tareas personales o compartidas.
+                </Typography>
               </Panel>
               <Panel title="Nuestra próxima cita" icon={<CalendarMonthRounded />}
                 action={<Chip label="Próximamente" size="small" />}>
@@ -905,10 +976,19 @@ export default function App() {
             </Box>
           </Box>}
           {page === 'profile' && <Box sx={{ maxWidth: 660, mx: 'auto' }}>
-            <Typography variant="h4" gutterBottom>Administración de mi espacio</Typography>
+            <Typography variant="h4" gutterBottom>{settingsSection === 'profile' ? 'Mi perfil' : 'Configurar espacio'}</Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              Configura el nombre que aparecerá en tu panel. La portada pública siempre conserva la marca EntreNos.
+              {settingsSection === 'profile' ? 'Actualiza los datos de tu cuenta.' : 'Personaliza el nombre, la portada y la apariencia de tu espacio.'}
             </Typography>
+            {settingsSection === 'profile' && <Panel title="Datos personales" icon={<SettingsRounded />}>
+              <Stack spacing={2}>
+                <TextField fullWidth label="Tu nombre" value={profileNameDraft}
+                  onChange={e => setProfileNameDraft(e.target.value)} inputProps={{ maxLength: 150 }} />
+                <Button variant="contained" disabled={loading || !profileNameDraft.trim()}
+                  onClick={() => void saveProfileName()}>Guardar perfil</Button>
+              </Stack>
+            </Panel>}
+            {settingsSection === 'space' && <>
             <Panel title={paired ? "Nombre de nuestra aplicación" : "Nombre de mi aplicación"} icon={<FavoriteRounded />}>
               <Typography color="text.secondary" sx={{ mb: 2 }} variant="body2">
                 {paired
@@ -952,11 +1032,28 @@ export default function App() {
               <Typography sx={{ mb: 1 }}>{paired ? 'Cuenta vinculada' : 'Vinculación pendiente'}</Typography>
               {!paired && <Button onClick={() => navigate('pair')}>Vincular cuenta</Button>}
             </Panel>}
-            <Button variant="outlined" color="primary" startIcon={<LogoutRounded />} onClick={signOut}>Salir</Button>
+            </>}
+            <Button variant="outlined" color="primary" startIcon={<LogoutRounded />} onClick={signOut}>Cerrar sesión</Button>
           </Box>}
         </Container>
+        <Dialog open={coverDialogOpen} onClose={() => setCoverDialogOpen(false)} fullWidth maxWidth="sm">
+          <DialogTitle>Editar foto de portada</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Introduce una URL HTTPS pública para utilizar tu propia foto. Si la dejas vacía,
+              volverá el atardecer predeterminado. {paired ? 'La fotografía será visible para ambos.' : 'Solo se cambiará tu portada individual.'}
+            </Typography>
+            <TextField fullWidth label="URL de la imagen" placeholder="https://..."
+              value={paired ? imageDraft : personalCoverDraft}
+              onChange={e => paired ? setImageDraft(e.target.value) : setPersonalCoverDraft(e.target.value)} />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setCoverDialogOpen(false)}>Cancelar</Button>
+            <Button variant="contained" disabled={loading || demo} onClick={() => void saveCoverPhoto()}>Guardar portada</Button>
+          </DialogActions>
+        </Dialog>
         {!desktop && page !== 'pair' && <Box className="mobile-navigation" sx={{ bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider' }}>
-          {nav.map(item => <Button key={item.value} aria-label={item.label} onClick={() => navigate(item.value)}
+          {mobileNav.map(item => <Button key={item.value} aria-label={item.label} onClick={() => navigate(item.value)}
             sx={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25,
               color: page === item.value ? 'primary.main' : 'text.secondary',
               fontSize: 11, px: 0.2 }}>
