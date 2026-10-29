@@ -20,6 +20,7 @@ import './styles.css';
 type Page = 'home' | 'tasks' | 'budget' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
+type UserProfile = { id: number; app_name: string; first_name: string; email: string };
 type CoupleData = { couple: { id: number; members: number[] } | null };
 const initialTasks: Task[] = [
   { name: 'Lavar la ropa', priority: 'Alta', done: false },
@@ -82,6 +83,9 @@ export default function App() {
   const [paired, setPaired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [appName, setAppName] = useState('');
+  const [nameDraft, setNameDraft] = useState('');
+  const personalizedName = appName.trim() || 'Nuestro espacio';
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -121,6 +125,9 @@ export default function App() {
       } else {
         const result = await login(email, password);
         setAccessToken(result.access); setDemo(false); setShowAuth(false);
+        const profile = await api<UserProfile>('/auth/me/', {}, result.access);
+        setAppName(profile.app_name || '');
+        setNameDraft(profile.app_name || '');
         const relation = await api<CoupleData>('/couples/me/', {}, result.access);
         const linked = Boolean(relation.couple);
         setPaired(linked); setPage(linked ? 'home' : 'pair');
@@ -149,9 +156,34 @@ export default function App() {
     finally { setLoading(false); }
   }
 
+  async function saveAppName() {
+    const cleanName = nameDraft.trim();
+    if (cleanName.length > 60) {
+      setMessage('El nombre debe tener máximo 60 caracteres.');
+      return;
+    }
+    if (demo) {
+      setAppName(cleanName);
+      setMessage('Nombre cambiado en la demostración.');
+      return;
+    }
+    setLoading(true); setMessage('');
+    try {
+      const saved = await api<UserProfile>('/auth/me/', {
+        method: 'PATCH', body: JSON.stringify({ app_name: cleanName }),
+      }, accessToken);
+      setAppName(saved.app_name || '');
+      setNameDraft(saved.app_name || '');
+      setMessage('Nombre personalizado guardado.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No pudimos guardar el nombre.');
+    } finally { setLoading(false); }
+  }
+
   function signOut() {
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setPage('home'); setMessage('');
+    setAppName(''); setNameDraft('');
   }
 
   const nav = [
@@ -280,7 +312,15 @@ export default function App() {
         <AppBar position="sticky" elevation={0} color="transparent" className="app-header"
           sx={{ bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Toolbar sx={{ maxWidth: 1500, width: '100%', mx: 'auto', gap: { xs: 1, md: 4 }, minHeight: 72 }}>
-            <BrandLogo themeName={themeName} onClick={goHome} />
+            <Box component="button" type="button" onClick={goHome} aria-label="Volver a inicio"
+              sx={{ border: 0, background: 'none', color: 'text.primary', cursor: 'pointer',
+                minHeight: 44, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FavoriteRounded color="primary" />
+              <Typography variant="h6" sx={{ fontSize: { xs: '1.05rem', sm: '1.3rem' },
+                maxWidth: { xs: 155, sm: 240 }, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {personalizedName}
+              </Typography>
+            </Box>
             {desktop && <Stack direction="row" gap={1} sx={{ flex: 1, justifyContent: 'center' }}>
               {nav.map(item => <Button key={item.value} startIcon={item.icon}
                 variant={page === item.value ? 'contained' : 'text'}
@@ -325,7 +365,7 @@ export default function App() {
             <Box className="dashboard-main">
               <Box sx={{ mb: 2 }}>
                 <Typography color="text.secondary">Hola,</Typography>
-                <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>Nuestro espacio</Typography>
+                <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>{personalizedName}</Typography>
                 <Typography color="text.secondary">Todo es mejor cuando lo compartimos.</Typography>
               </Box>
               <Box className="anniversary-hero">
@@ -420,6 +460,23 @@ export default function App() {
           </Box>}
           {page === 'profile' && <Box sx={{ maxWidth: 660, mx: 'auto' }}>
             <Typography variant="h4" gutterBottom>Perfil y preferencias</Typography>
+            <Panel title="Personaliza tu espacio" icon={<FavoriteRounded />}>
+              <Typography color="text.secondary" sx={{ mb: 2 }} variant="body2">
+                Elige cómo quieres llamar a tu aplicación. Este nombre reemplazará «EntreNos» dentro de tu panel; la portada pública conservará la marca original.
+              </Typography>
+              <Box component="form" onSubmit={event => { event.preventDefault(); void saveAppName(); }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="start">
+                  <TextField label="Nombre de tu espacio" value={nameDraft}
+                    onChange={event => setNameDraft(event.target.value)}
+                    inputProps={{ maxLength: 60 }}
+                    placeholder="Ej. Nuestro rincón" helperText="Hasta 60 caracteres; vacío usa «Nuestro espacio»."
+                    fullWidth />
+                  <Button type="submit" variant="contained" disabled={loading} sx={{ minHeight: 56 }}>
+                    Guardar
+                  </Button>
+                </Stack>
+              </Box>
+            </Panel>
             <Panel title="Apariencia" icon={<SettingsRounded />}>
               <TextField select fullWidth label="Tema" value={themeName} onChange={e => setThemeName(e.target.value as ThemeName)}>
                 <MenuItem value="light">Claro</MenuItem><MenuItem value="dark">Oscuro</MenuItem><MenuItem value="premium">Premium</MenuItem>
