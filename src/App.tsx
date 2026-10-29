@@ -24,7 +24,7 @@ type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean }
 type UserProfile = { id: number; app_name: string; first_name: string; email: string };
 type WorkspaceItem = { id: number; kind: 'task' | 'note'; title: string; content: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
-type CoupleData = { couple: { id: number; members: number[] } | null };
+type CoupleData = { couple: { id: number; members: number[]; display_name: string } | null };
 const initialTasks: Task[] = [
   { name: 'Lavar la ropa', priority: 'Alta', done: false },
   { name: 'Limpiar el baño', priority: 'Media', done: false },
@@ -91,7 +91,9 @@ export default function App() {
   const [message, setMessage] = useState('');
   const [appName, setAppName] = useState('');
   const [nameDraft, setNameDraft] = useState('');
-  const personalizedName = appName.trim() || 'Nuestro espacio';
+  const [sharedName, setSharedName] = useState('');
+  const [sharedNameDraft, setSharedNameDraft] = useState('');
+  const personalizedName = (paired ? sharedName : appName).trim() || 'Nuestro espacio';
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -134,6 +136,8 @@ export default function App() {
         setAppName(profile.app_name || '');
         setNameDraft(profile.app_name || '');
         setPaired(Boolean(relation.couple));
+        setSharedName(relation.couple?.display_name || '');
+        setSharedNameDraft(relation.couple?.display_name || '');
         setScope('personal');
         setPage(pendingInvite && !relation.couple ? 'pair' : 'home');
         if (pendingInvite && !relation.couple) setInviteCode(pendingInvite);
@@ -231,7 +235,9 @@ export default function App() {
         setNameDraft(profile.app_name || '');
         const relation = await api<CoupleData>('/couples/me/', {}, result.access);
         const linked = Boolean(relation.couple);
-        setPaired(linked); setScope('personal'); setPage(pendingInvite && !linked ? 'pair' : 'home');
+        setPaired(linked); setSharedName(relation.couple?.display_name || '');
+        setSharedNameDraft(relation.couple?.display_name || '');
+        setScope('personal'); setPage(pendingInvite && !linked ? 'pair' : 'home');
         if (!linked && pendingInvite) setInviteCode(pendingInvite);
       }
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No fue posible conectarse.'); }
@@ -245,6 +251,8 @@ export default function App() {
       const relation = await api<CoupleData>('/couples/me/', {}, accessToken);
       const linked = Boolean(relation.couple);
       setPaired(linked);
+      setSharedName(relation.couple?.display_name || '');
+      setSharedNameDraft(relation.couple?.display_name || '');
       if (linked) {
         setScope('shared');
         setPage('home');
@@ -276,11 +284,26 @@ export default function App() {
       await api('/couples/invitations/accept/', {
         method: 'POST', body: JSON.stringify({ code: inviteCode.trim(), password: acceptPassword })
       }, accessToken);
-      setPaired(true); setScope('shared'); setPage('home'); setMessage('¡Ya están vinculados!');
+      setPaired(true); setSharedName(''); setSharedNameDraft(''); setScope('shared'); setPage('home'); setMessage('¡Ya están vinculados!');
       setAcceptPassword('');
       if (window.location.hash.startsWith('#invite=')) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo aceptar la invitación.'); }
     finally { setLoading(false); }
+  }
+
+  async function saveSharedName() {
+    if (!paired) return;
+    setLoading(true); setMessage('');
+    try {
+      const result = await api<{ display_name: string }>('/couples/me/', {
+        method: 'PATCH', body: JSON.stringify({ display_name: sharedNameDraft.trim() }),
+      }, accessToken);
+      setSharedName(result.display_name || '');
+      setSharedNameDraft(result.display_name || '');
+      setMessage('Nombre compartido actualizado para ambos.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No pudimos actualizar el nombre compartido.');
+    } finally { setLoading(false); }
   }
 
   async function saveAppName() {
@@ -311,7 +334,7 @@ export default function App() {
     clearSession();
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
-    setAppName(''); setNameDraft(''); setItems([]); setScope('personal');
+    setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setItems([]); setScope('personal');
   }
 
   const nav = [
@@ -550,7 +573,7 @@ export default function App() {
               <Box sx={{ mb: 2 }}>
                 <Typography color="text.secondary">Hola,</Typography>
                 <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>
-                  {scope === 'personal' && !demo ? 'Mi espacio' : personalizedName}
+                  {scope === 'personal' && !demo ? (appName.trim() || 'Mi espacio') : personalizedName}
                 </Typography>
                 <Typography color="text.secondary">Todo es mejor cuando lo compartimos.</Typography>
               </Box>
@@ -664,14 +687,17 @@ export default function App() {
             <Typography color="text.secondary" sx={{ mb: 3 }}>
               Configura el nombre que aparecerá en tu panel. La portada pública siempre conserva la marca EntreNos.
             </Typography>
-            <Panel title="Nombre de la aplicación" icon={<FavoriteRounded />}>
+            <Panel title={paired ? "Nombre de nuestra aplicación" : "Nombre de mi aplicación"} icon={<FavoriteRounded />}>
               <Typography color="text.secondary" sx={{ mb: 2 }} variant="body2">
-                Elige cómo quieres llamar a tu aplicación. Este nombre aparece en el encabezado de tu panel individual y no modifica la marca pública EntreNos.
+                {paired
+                  ? 'Ambos pueden cambiar este nombre y los dos verán el mismo título de su espacio compartido.'
+                  : 'Personaliza tu espacio individual; después podrás elegir un nombre compartido con tu pareja.'}
               </Typography>
-              <Box component="form" onSubmit={event => { event.preventDefault(); void saveAppName(); }}>
+              <Box component="form" onSubmit={event => { event.preventDefault(); void (paired ? saveSharedName() : saveAppName()); }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="start">
-                  <TextField label="Nombre de tu espacio" value={nameDraft}
-                    onChange={event => setNameDraft(event.target.value)}
+                  <TextField label={paired ? 'Nombre compartido' : 'Nombre de tu espacio'}
+                    value={paired ? sharedNameDraft : nameDraft}
+                    onChange={event => paired ? setSharedNameDraft(event.target.value) : setNameDraft(event.target.value)}
                     inputProps={{ maxLength: 60 }}
                     placeholder="Ej. Nuestro rincón" helperText="Hasta 60 caracteres; vacío usa «Nuestro espacio»."
                     fullWidth />
@@ -681,6 +707,9 @@ export default function App() {
                 </Stack>
               </Box>
             </Panel>
+            {paired && <Button sx={{ mb: 2 }} onClick={() => void refreshPairing()}>
+              Actualizar nombre compartido
+            </Button>}
             <Panel title="Apariencia" icon={<SettingsRounded />}>
               <TextField select fullWidth label="Tema" value={themeName} onChange={e => setThemeName(e.target.value as ThemeName)}>
                 <MenuItem value="light">Claro</MenuItem><MenuItem value="dark">Oscuro</MenuItem><MenuItem value="premium">Premium</MenuItem>
