@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
-  Alert, AppBar, Avatar, Box, Button, Card, CardContent, Chip, Container,
+  Alert, AppBar, Avatar, Box, Button, Card, CardContent, Checkbox, FormControlLabel, Chip, Container,
   CssBaseline, Divider, IconButton, LinearProgress, MenuItem, Stack,
   Tab, Tabs, TextField, ThemeProvider, Toolbar, Typography, useMediaQuery
 } from '@mui/material';
@@ -15,7 +15,7 @@ import {
 } from '@mui/icons-material';
 import { buildTheme } from './theme/mui';
 import { brand, themes, type ThemeName } from './theme/tokens';
-import { api, login, register } from './api/client';
+import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
 
 type Page = 'home' | 'tasks' | 'budget' | 'profile' | 'pair';
@@ -83,6 +83,8 @@ export default function App() {
   const [pendingInvite] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('invite') || '');
   const [showAuth, setShowAuth] = useState(Boolean(new URLSearchParams(window.location.hash.slice(1)).get('invite')));
   const [accessToken, setAccessToken] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
+  const [restoringSession, setRestoringSession] = useState(() => hasRememberedSession());
   const [demo, setDemo] = useState(false);
   const [paired, setPaired] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -113,6 +115,37 @@ export default function App() {
   const scopeLabel = scope === 'personal' ? 'Mi espacio' : 'Nuestro espacio';
   const inApp = demo || Boolean(accessToken);
   const palette = themes[themeName];
+
+  useEffect(() => {
+    let active = true;
+    async function restore() {
+      const restored = await restoreSession();
+      if (!active) return;
+      if (!restored) { setRestoringSession(false); return; }
+      try {
+        const [profile, relation] = await Promise.all([
+          api<UserProfile>('/auth/me/', {}, restored),
+          api<CoupleData>('/couples/me/', {}, restored),
+        ]);
+        if (!active) return;
+        setAccessToken(restored);
+        setDemo(false);
+        setShowAuth(false);
+        setAppName(profile.app_name || '');
+        setNameDraft(profile.app_name || '');
+        setPaired(Boolean(relation.couple));
+        setScope('personal');
+        setPage(pendingInvite && !relation.couple ? 'pair' : 'home');
+        if (pendingInvite && !relation.couple) setInviteCode(pendingInvite);
+      } catch {
+        // Network outages should not destroy a valid refresh token.
+      } finally {
+        if (active) setRestoringSession(false);
+      }
+    }
+    void restore();
+    return () => { active = false; };
+  }, [pendingInvite]);
 
   function navigate(next: Page) {
     setMessage(''); setPage(next);
@@ -191,6 +224,7 @@ export default function App() {
         setAuthMode('login'); setMessage('Cuenta creada. Ahora inicia sesión.');
       } else {
         const result = await login(email, password);
+        rememberSession(result.access, result.refresh, rememberMe);
         setAccessToken(result.access); setDemo(false); setShowAuth(false);
         const profile = await api<UserProfile>('/auth/me/', {}, result.access);
         setAppName(profile.app_name || '');
@@ -274,6 +308,7 @@ export default function App() {
   }
 
   function signOut() {
+    clearSession();
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
     setAppName(''); setNameDraft(''); setItems([]); setScope('personal');
@@ -337,7 +372,10 @@ export default function App() {
       '--en-border': palette.border,
       '--en-cream': palette.background
     } as CSSProperties} sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
-      {!inApp ? <>
+      {restoringSession ? <Container maxWidth="sm" sx={{ py: 12, textAlign: 'center' }}>
+        <Typography variant="h6">Recuperando tu sesión…</Typography>
+        <LinearProgress sx={{ mt: 3 }} />
+      </Container> : !inApp ? <>
         <AppBar elevation={0} position="static" color="transparent" className="landing-header">
           <Toolbar sx={{ maxWidth: 1200, width: '100%', mx: 'auto', justifyContent: 'space-between', py: 1 }}>
             <BrandLogo themeName={themeName} onClick={goHome} />
@@ -389,6 +427,9 @@ export default function App() {
                     {authMode === 'register' && <TextField required label="Nombre de usuario" value={username} onChange={e => setUsername(e.target.value)} />}
                     <TextField required type="email" label="Correo electrónico" value={email} onChange={e => setEmail(e.target.value)} />
                     <TextField required type="password" label="Contraseña" value={password} onChange={e => setPassword(e.target.value)} />
+                    {authMode === 'login' && <FormControlLabel
+                      control={<Checkbox checked={rememberMe} onChange={event => setRememberMe(event.target.checked)} />}
+                      label="Recordar mi sesión en este dispositivo" />}
                     {message && <Alert severity={message.startsWith('Cuenta creada') ? 'success' : 'error'}>{message}</Alert>}
                     <Button disabled={loading} type="submit" variant="contained" size="large">
                       {loading ? 'Procesando…' : authMode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
