@@ -22,9 +22,9 @@ type Page = 'home' | 'tasks' | 'budget' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type UserProfile = { id: number; app_name: string; first_name: string; email: string };
-type WorkspaceItem = { id: number; kind: 'task' | 'note'; title: string; content: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
+type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
-type CoupleData = { couple: { id: number; members: number[]; display_name: string } | null };
+type CoupleData = { couple: { id: number; members: number[]; display_name: string; image_url: string } | null };
 const initialTasks: Task[] = [
   { name: 'Lavar la ropa', priority: 'Alta', done: false },
   { name: 'Limpiar el baño', priority: 'Media', done: false },
@@ -93,6 +93,12 @@ export default function App() {
   const [nameDraft, setNameDraft] = useState('');
   const [sharedName, setSharedName] = useState('');
   const [sharedNameDraft, setSharedNameDraft] = useState('');
+  const [sharedImage, setSharedImage] = useState('');
+  const [imageDraft, setImageDraft] = useState('');
+  const [noteTag, setNoteTag] = useState('Relación');
+  const [ruleTitle, setRuleTitle] = useState('');
+  const [ruleContent, setRuleContent] = useState('');
+  const [ruleTag, setRuleTag] = useState('Convivencia');
   const personalizedName = (paired ? sharedName : appName).trim() || 'Nuestro espacio';
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -138,6 +144,10 @@ export default function App() {
         setPaired(Boolean(relation.couple));
         setSharedName(relation.couple?.display_name || '');
         setSharedNameDraft(relation.couple?.display_name || '');
+        setSharedImage(relation.couple?.image_url || '');
+        setImageDraft(relation.couple?.image_url || '');
+        setSharedImage(relation.couple?.image_url || '');
+        setImageDraft(relation.couple?.image_url || '');
         setScope('personal');
         setPage(pendingInvite && !relation.couple ? 'pair' : 'home');
         if (pendingInvite && !relation.couple) setInviteCode(pendingInvite);
@@ -182,13 +192,13 @@ export default function App() {
         : `/workspace/items/?scope=${scope}`, {
         method: editing ? 'PATCH' : 'POST',
         body: JSON.stringify({ ...(editing ? {} : { kind }), title,
-          content: kind === 'note' ? noteContent : '', priority: 'medium' }),
+          content: kind === 'note' ? noteContent : '', tag: kind === 'note' ? noteTag.trim() : '', priority: 'medium' }),
       }, accessToken);
       setItems(old => editing
         ? old.map(item => item.id === editingNoteId ? result : item)
         : [result, ...old]);
       if (kind === 'task') setNewTask('');
-      else { setNoteTitle(''); setNoteContent(''); setEditingNoteId(null); }
+      else { setNoteTitle(''); setNoteContent(''); setNoteTag('Relación'); setEditingNoteId(null); }
     } catch (error) { setItemError(error instanceof Error ? error.message : 'No se pudo guardar.'); }
     finally { setLoading(false); }
   }
@@ -237,6 +247,8 @@ export default function App() {
         const linked = Boolean(relation.couple);
         setPaired(linked); setSharedName(relation.couple?.display_name || '');
         setSharedNameDraft(relation.couple?.display_name || '');
+        setSharedImage(relation.couple?.image_url || '');
+        setImageDraft(relation.couple?.image_url || '');
         setScope('personal'); setPage(pendingInvite && !linked ? 'pair' : 'home');
         if (!linked && pendingInvite) setInviteCode(pendingInvite);
       }
@@ -253,6 +265,8 @@ export default function App() {
       setPaired(linked);
       setSharedName(relation.couple?.display_name || '');
       setSharedNameDraft(relation.couple?.display_name || '');
+        setSharedImage(relation.couple?.image_url || '');
+        setImageDraft(relation.couple?.image_url || '');
       if (linked) {
         setScope('shared');
         setPage('home');
@@ -284,7 +298,7 @@ export default function App() {
       await api('/couples/invitations/accept/', {
         method: 'POST', body: JSON.stringify({ code: inviteCode.trim(), password: acceptPassword })
       }, accessToken);
-      setPaired(true); setSharedName(''); setSharedNameDraft(''); setScope('shared'); setPage('home'); setMessage('¡Ya están vinculados!');
+      setPaired(true); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setScope('shared'); setPage('home'); setMessage('¡Ya están vinculados!');
       setAcceptPassword('');
       if (window.location.hash.startsWith('#invite=')) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo aceptar la invitación.'); }
@@ -304,6 +318,34 @@ export default function App() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No pudimos actualizar el nombre compartido.');
     } finally { setLoading(false); }
+  }
+
+  async function saveSharedImage() {
+    if (!paired) return;
+    setLoading(true); setMessage('');
+    try {
+      const result = await api<{ image_url: string }>('/couples/me/', {
+        method: 'PATCH', body: JSON.stringify({ image_url: imageDraft.trim() }),
+      }, accessToken);
+      setSharedImage(result.image_url || '');
+      setImageDraft(result.image_url || '');
+      setMessage('Imagen de nuestro espacio guardada para ambos.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo guardar la imagen.');
+    } finally { setLoading(false); }
+  }
+
+  async function saveRule() {
+    if (!ruleTitle.trim() || demo) return;
+    setLoading(true); setItemError('');
+    try {
+      const result = await api<WorkspaceItem>(`/workspace/items/?scope=${scope}`, {
+        method: 'POST', body: JSON.stringify({ kind: 'rule', title: ruleTitle.trim(), content: ruleContent, tag: ruleTag.trim() }),
+      }, accessToken);
+      setItems(old => [result, ...old]);
+      setRuleTitle(''); setRuleContent('');
+    } catch (error) { setItemError(error instanceof Error ? error.message : 'No se pudo guardar el acuerdo.'); }
+    finally { setLoading(false); }
   }
 
   async function saveAppName() {
@@ -334,13 +376,13 @@ export default function App() {
     clearSession();
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
-    setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setItems([]); setScope('personal');
+    setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
 
   const nav = [
     { value: 'home' as const, label: 'Inicio', icon: <HomeRounded /> },
     { value: 'tasks' as const, label: 'Tareas', icon: <ChecklistRounded /> },
-    { value: 'budget' as const, label: 'Vivir juntos', icon: <WalletRounded /> },
+    { value: 'budget' as const, label: 'Nuestro hogar', icon: <HomeRounded /> },
     { value: 'profile' as const, label: 'Configurar', icon: <SettingsRounded /> }
   ];
 
@@ -349,6 +391,7 @@ export default function App() {
     completed: task.done, priority: task.priority === 'Alta' ? 'high' as const : task.priority === 'Baja' ? 'low' as const : 'medium' as const
   })) : items.filter(item => item.kind === 'task');
   const visibleNotes = demo ? [] : items.filter(item => item.kind === 'note');
+  const visibleRules = demo ? [] : items.filter(item => item.kind === 'rule');
   const tasksContent = <Stack spacing={0.5}>
     {visibleTasks.length === 0 && <Typography variant="body2" color="text.secondary">
       Aún no tienes tareas. Agrega la primera para empezar a organizarte.
@@ -571,7 +614,9 @@ export default function App() {
           {page === 'home' && <Box className="dashboard-layout">
             <Box className="dashboard-main">
               <Box sx={{ mb: 2 }}>
-                <Typography color="text.secondary">Hola,</Typography>
+                <Typography color="text.secondary">Hola, {email ? email.split('@')[0] : 'bienvenidos'}</Typography>
+                {paired && sharedImage && <Box component="img" alt="Imagen de nuestro espacio"
+                  src={sharedImage} sx={{ width: '100%', height: { xs: 150, md: 220 }, objectFit: 'cover', borderRadius: 3, my: 2 }} />}
                 <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>
                   {scope === 'personal' && !demo ? (appName.trim() || 'Mi espacio') : personalizedName}
                 </Typography>
@@ -586,34 +631,34 @@ export default function App() {
                   <Typography variant="body2" sx={{ mt: 1 }}>Fecha de ejemplo · Configurable próximamente</Typography>
                 </Box>
               </Box>
-              <Panel title="Notas importantes" icon={<PushPinRounded />}>
+              <Panel title="Borrador de pensamientos" icon={<PushPinRounded />}>
                 <Box className="notes-grid">
-                  {demo ? <Typography color="text.secondary">En tu cuenta podrás crear y editar tus notas personales.</Typography> :
+                  {demo ? <Typography color="text.secondary">Anota ideas para conversar, negociar o compartir en algún momento.</Typography> :
                   visibleNotes.length ? visibleNotes.map(note => <Box key={note.id} className="note-card note-cream">
+                    <Chip label={note.tag || 'Sin etiqueta'} size="small" sx={{ alignSelf: 'start' }} />
                     <Typography fontWeight={700}>{note.title}</Typography>
                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', flex: 1 }}>{note.content}</Typography>
                     <Stack direction="row" spacing={1}>
-                      <Button size="small" onClick={() => { setEditingNoteId(note.id); setNoteTitle(note.title); setNoteContent(note.content); }}>Editar</Button>
+                      <Button size="small" onClick={() => { setEditingNoteId(note.id); setNoteTitle(note.title); setNoteContent(note.content); setNoteTag(note.tag || 'Relación'); }}>Editar</Button>
                       <Button size="small" color="error" onClick={() => void removeItem(note)}>Eliminar</Button>
                     </Stack>
-                  </Box>) : <Typography color="text.secondary">Aún no tienes notas guardadas.</Typography>}
+                  </Box>) : <Typography color="text.secondary">Todavía no tienes pensamientos guardados. Puedes comenzar con algo que quisieras hablar.</Typography>}
                 </Box>
                 {!demo && <Stack spacing={1} sx={{ mt: 2 }}>
-                  <TextField size="small" label="Título de la nota" value={noteTitle} onChange={e => setNoteTitle(e.target.value)} inputProps={{ maxLength: 150 }} />
-                  <TextField size="small" multiline minRows={2} label="Contenido" value={noteContent} onChange={e => setNoteContent(e.target.value)} />
+                  <TextField size="small" label="Idea o tema para conversar" value={noteTitle} onChange={e => setNoteTitle(e.target.value)} inputProps={{ maxLength: 150 }} />
+                  <TextField size="small" label="Etiqueta (Relación, Casa, Planes u otra)" value={noteTag} onChange={e => setNoteTag(e.target.value)} inputProps={{ maxLength: 60 }} />
+                  <TextField size="small" multiline minRows={2} label="¿Qué te gustaría hablar o negociar?" value={noteContent} onChange={e => setNoteContent(e.target.value)} />
                   <Stack direction="row" spacing={1}>
                     <Button variant="outlined" disabled={loading || !noteTitle.trim()} onClick={() => void addItem('note')}>
-                      {editingNoteId === null ? 'Guardar nota' : 'Guardar cambios'}
+                      {editingNoteId === null ? 'Guardar pensamiento' : 'Guardar cambios'}
                     </Button>
                     {editingNoteId !== null && <Button onClick={() => { setEditingNoteId(null); setNoteTitle(''); setNoteContent(''); }}>Cancelar</Button>}
                   </Stack>
                 </Stack>}
               </Panel>
-              <Panel title="Nuestros recuerdos" icon={<FavoriteRounded />}>
-                <Box className="memory-strip">
-                  {['El primer viaje', 'Nuestro rincón', 'Un día especial'].map((name, i) =>
-                    <Box key={name} className={'memory-tile memory-' + i}><Typography>{name}</Typography></Box>)}
-                </Box>
+              <Panel title="Nuestros recuerdos" icon={<FavoriteRounded />}
+                action={<Chip size="small" label="Próximamente" />}>
+                <Typography color="text.secondary">Un lugar para guardar fotos e historias especiales. Lo construiremos en una siguiente etapa.</Typography>
               </Panel>
             </Box>
             <Box className="dashboard-side">
@@ -625,14 +670,12 @@ export default function App() {
                 <Typography fontWeight={600}>Un momento para nosotros</Typography>
                 <Typography variant="body2" color="text.secondary">Aquí aparecerán nuestras próximas actividades.</Typography>
               </Panel>
-              <Panel title="Vivir juntos" icon={<HomeRounded />}
-                action={<Button size="small" onClick={() => navigate('budget')}>Ver detalles</Button>}>
-                <Typography variant="caption" color="text.secondary">Disponible para planear · Ejemplo</Typography>
-                <Typography variant="h5" sx={{ my: 1 }}>{currency(13500)}</Typography>
-                <LinearProgress variant="determinate" value={61} sx={{ height: 9, borderRadius: 6, mb: 2 }} />
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="caption">Ingresos: {currency(35000)}</Typography>
-                  <Typography variant="caption">Gastos: {currency(17000)}</Typography>
+              <Panel title="Nuestro hogar" icon={<HomeRounded />}
+                action={<Button size="small" onClick={() => navigate('budget')}>Entrar</Button>}>
+                <Typography color="text.secondary" variant="body2">Organicen juntos la limpieza, los acuerdos y las normas para convivir.</Typography>
+                <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
+                  <Chip label="Limpieza" size="small" /><Chip label="Acuerdos" size="small" />
+                  <Chip label="Compras del hogar" size="small" />
                 </Stack>
               </Panel>
             </Box>
@@ -658,29 +701,42 @@ export default function App() {
             </Box>
           </Box>}
           {page === 'budget' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
-            <Typography variant="h4">Vivir juntos</Typography>
-            <Typography color="text.secondary" sx={{ mb: 2 }}>Construyendo la vida que queremos.</Typography>
-            <Tabs value={budgetTab} onChange={(_, value: number) => setBudgetTab(value)}
-              variant="scrollable" scrollButtons="auto" sx={{ mb: 2 }}>
-              {['Resumen', 'Gastos fijos', 'Deudas', 'Compras planeadas'].map(label => <Tab key={label} label={label} />)}
-            </Tabs>
-            {budgetTab === 0 ? <Box className="two-column">
-              <Panel title="Presupuesto del mes" icon={<WalletRounded />}>
-                <Typography color="text.secondary" variant="body2">Disponible para planear · Ejemplo</Typography>
-                <Typography variant="h4" sx={{ mt: 1 }}>{currency(13500)}</Typography>
-                <LinearProgress variant="determinate" value={61} sx={{ height: 12, mt: 2, mb: 1, borderRadius: 6 }} />
-                <Typography variant="caption" color="text.secondary">Ingresos menos compromisos previstos</Typography>
+            <Typography variant="h4" gutterBottom>Nuestro hogar</Typography>
+            <Typography color="text.secondary" sx={{ mb: 3 }}>Pequeños acuerdos para construir una convivencia más sencilla.</Typography>
+            <Box className="two-column">
+              <Panel title="Limpieza y responsabilidades" icon={<ChecklistRounded />}>
+                <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
+                  Las tareas del hogar se organizan con la lista de tareas de tu espacio {scope === 'shared' ? 'compartido' : 'individual'}.
+                </Typography>
+                <Button variant="outlined" onClick={() => navigate('tasks')}>Ver tareas de limpieza</Button>
               </Panel>
-              <Panel title="Resumen financiero">
-                {([['Ingresos', 35000], ['Gastos fijos', 17000], ['Deudas', 4500]] as const).map(([label, amount]) =>
-                  <Stack key={label} direction="row" justifyContent="space-between" sx={{ py: 1 }}>
-                    <Typography>{label}</Typography><Typography fontWeight={700}>{currency(amount)}</Typography>
-                  </Stack>)}
+              <Panel title="Normas y acuerdos de convivencia" icon={<FavoriteRounded />}>
+                {visibleRules.length ? visibleRules.map(rule => <Box key={rule.id} sx={{ py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Chip size="small" label={rule.tag || 'Convivencia'} sx={{ mb: 1 }} />
+                  <Typography fontWeight={700}>{rule.title}</Typography>
+                  <Typography color="text.secondary" variant="body2">{rule.content}</Typography>
+                  <Button size="small" color="error" onClick={() => void removeItem(rule)}>Eliminar</Button>
+                </Box>) : <Typography color="text.secondary">Todavía no hay acuerdos. Pueden empezar por algo sencillo.</Typography>}
+                {!demo && <Stack spacing={1.5} sx={{ mt: 2 }}>
+                  <TextField label="Acuerdo" size="small" value={ruleTitle} onChange={e => setRuleTitle(e.target.value)} />
+                  <TextField label="Detalles" size="small" multiline minRows={2} value={ruleContent} onChange={e => setRuleContent(e.target.value)} />
+                  <TextField label="Etiqueta" size="small" value={ruleTag} onChange={e => setRuleTag(e.target.value)} />
+                  <Button variant="contained" disabled={loading || !ruleTitle.trim()} onClick={() => void saveRule()}>Guardar acuerdo</Button>
+                </Stack>}
               </Panel>
-              <Panel title="Compras planeadas" icon={<ShoppingCartRounded />}>{purchaseContent}</Panel>
-            </Box> : <Panel title={['', 'Gastos fijos', 'Deudas', 'Compras planeadas'][budgetTab]}>
-              {budgetTab === 3 ? purchaseContent : <Typography color="text.secondary">Próximamente podrás registrar y priorizar cada movimiento compartido.</Typography>}
-            </Panel>}
+              <Panel title="Compras y gastos del hogar" icon={<ShoppingCartRounded />}
+                action={<Chip size="small" label="Próximamente" />}>
+                <Typography color="text.secondary" variant="body2">
+                  Aquí reuniremos las compras necesarias para la casa. Los importes podrán consultarse después en Finanzas, con privacidad configurable.
+                </Typography>
+              </Panel>
+              <Panel title="Finanzas e inversiones" icon={<WalletRounded />}
+                action={<Chip size="small" label="En diseño" />}>
+                <Typography color="text.secondary" variant="body2">
+                  Ingresos y salarios serán opcionales. Cada persona decidirá si comparte sus cifras. No asumiremos que ambos tienen ingresos.
+                </Typography>
+              </Panel>
+            </Box>
           </Box>}
           {page === 'profile' && <Box sx={{ maxWidth: 660, mx: 'auto' }}>
             <Typography variant="h4" gutterBottom>Administración de mi espacio</Typography>
@@ -710,6 +766,17 @@ export default function App() {
             {paired && <Button sx={{ mb: 2 }} onClick={() => void refreshPairing()}>
               Actualizar nombre compartido
             </Button>}
+            {paired && <Panel title="Fotografía de nuestro espacio" icon={<FavoriteRounded />}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Ambos verán esta imagen en el panel. Por ahora puedes pegar una URL HTTPS de la fotografía; más adelante añadiremos subida de archivos.
+              </Typography>
+              {sharedImage && <Box component="img" src={sharedImage} alt="Foto compartida" sx={{ width: '100%', height: 170, objectFit: 'cover', borderRadius: 2, mb: 2 }} />}
+              <TextField fullWidth label="URL HTTPS de la imagen" value={imageDraft}
+                onChange={e => setImageDraft(e.target.value)} placeholder="https://..." />
+              <Button sx={{ mt: 2 }} variant="outlined" disabled={loading} onClick={() => void saveSharedImage()}>
+                Guardar foto compartida
+              </Button>
+            </Panel>}
             <Panel title="Apariencia" icon={<SettingsRounded />}>
               <TextField select fullWidth label="Tema" value={themeName} onChange={e => setThemeName(e.target.value as ThemeName)}>
                 <MenuItem value="light">Claro</MenuItem><MenuItem value="dark">Oscuro</MenuItem><MenuItem value="premium">Premium</MenuItem>
