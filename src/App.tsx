@@ -204,6 +204,25 @@ export default function App() {
     finally { setLoading(false); }
   }
 
+  async function refreshPairing() {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const relation = await api<CoupleData>('/couples/me/', {}, accessToken);
+      const linked = Boolean(relation.couple);
+      setPaired(linked);
+      if (linked) {
+        setScope('shared');
+        setPage('home');
+        setMessage('¡Tu pareja ya está vinculada! Ahora puedes usar el espacio compartido.');
+      } else {
+        setMessage('La invitación sigue pendiente. Mientras tanto puedes utilizar tu espacio individual.');
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo actualizar el estado.');
+    } finally { setLoading(false); }
+  }
+
   async function createInvitation() {
     setLoading(true); setMessage('');
     try {
@@ -433,7 +452,10 @@ export default function App() {
             {paired ? <Stack direction="row" spacing={1}>
               <Button size="small" variant={scope === 'personal' ? 'contained' : 'outlined'} onClick={() => setScope('personal')}>Individual</Button>
               <Button size="small" variant={scope === 'shared' ? 'contained' : 'outlined'} onClick={() => setScope('shared')}>Compartido</Button>
-            </Stack> : <Button variant="outlined" onClick={() => navigate('pair')}>Invitar a mi pareja</Button>}
+            </Stack> : <Stack direction="row" gap={1}>
+              <Button variant="outlined" onClick={() => navigate('pair')}>Invitar a mi pareja</Button>
+              <Button disabled={loading} onClick={() => void refreshPairing()}>Verificar vínculo</Button>
+            </Stack>}
           </CardContent></Card>}
           {itemsLoading && <LinearProgress sx={{ mb: 2 }} />}
           {page === 'pair' && <Box sx={{ maxWidth: 600, mx: 'auto', mt: 3 }}>
