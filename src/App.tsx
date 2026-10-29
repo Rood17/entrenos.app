@@ -18,12 +18,14 @@ import { brand, themes, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
 
-type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'profile' | 'pair';
+type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'finances' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
+type MonthlyNeed = { id: number; name: string; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
+const needPriorities = [{ value: 'essential', label: 'Esencial' }, { value: 'high', label: 'Alta' }, { value: 'medium', label: 'Media' }, { value: 'low', label: 'Baja' }] as const;
 type CoupleData = { couple: { id: number; members: number[]; display_name: string; image_url: string } | null };
 const initialTasks: Task[] = [
   { name: 'Lavar la ropa', priority: 'Alta', done: false },
@@ -115,6 +117,14 @@ export default function App() {
   const [budgetTab, setBudgetTab] = useState(0);
   const [taskTab, setTaskTab] = useState(0);
   const [scope, setScope] = useState<WorkspaceScope>('personal');
+  const [monthlyNeeds, setMonthlyNeeds] = useState<MonthlyNeed[]>([]);
+  const [needName, setNeedName] = useState('');
+  const [needCost, setNeedCost] = useState('');
+  const [needPriority, setNeedPriority] = useState<MonthlyNeed['priority']>('medium');
+  const [needShared, setNeedShared] = useState(false);
+  const [editingNeed, setEditingNeed] = useState<number | null>(null);
+  const [needsLoading, setNeedsLoading] = useState(false);
+  const [needsError, setNeedsError] = useState('');
   const [items, setItems] = useState<WorkspaceItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [noteTitle, setNoteTitle] = useState('');
@@ -178,6 +188,55 @@ export default function App() {
       .finally(() => { if (active) setItemsLoading(false); });
     return () => { active = false; };
   }, [accessToken, scope, paired, demo]);
+
+  useEffect(() => {
+    if (!accessToken || demo || (scope === 'shared' && !paired) || page !== 'finances') return;
+    let active = true;
+    setNeedsLoading(true);
+    setNeedsError('');
+    api<MonthlyNeed[]>(`/finances/monthly-needs/?scope=${scope}`, {}, accessToken)
+      .then(data => { if (active) setMonthlyNeeds(data); })
+      .catch(error => { if (active) setNeedsError(error instanceof Error ? error.message : 'No se pudieron cargar las necesidades.'); })
+      .finally(() => { if (active) setNeedsLoading(false); });
+    return () => { active = false; };
+  }, [accessToken, demo, paired, scope, page]);
+
+  function resetNeedForm() {
+    setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedShared(false); setEditingNeed(null);
+  }
+
+  async function saveNeed() {
+    if (!accessToken || scope !== 'personal') return;
+    const numeric = Number(needCost);
+    if (!needName.trim() || !needCost.trim() || !Number.isFinite(numeric) || numeric < 0) {
+      setNeedsError('Ingresa un nombre y un costo válido de cero o más.');
+      return;
+    }
+    setNeedsLoading(true); setNeedsError('');
+    try {
+      const value = await api<MonthlyNeed>(editingNeed
+        ? `/finances/monthly-needs/${editingNeed}/` : '/finances/monthly-needs/', {
+        method: editingNeed ? 'PATCH' : 'POST',
+        body: JSON.stringify({ name: needName.trim(), cost: numeric.toFixed(2),
+          priority: needPriority, shared: needShared }),
+      }, accessToken);
+      setMonthlyNeeds(old => editingNeed
+        ? old.map(need => need.id === editingNeed ? value : need)
+        : [value, ...old]);
+      resetNeedForm();
+    } catch (error) { setNeedsError(error instanceof Error ? error.message : 'No se pudo guardar.'); }
+    finally { setNeedsLoading(false); }
+  }
+
+  async function removeNeed(id: number) {
+    setNeedsLoading(true); setNeedsError('');
+    try {
+      await api<unknown>(`/finances/monthly-needs/${id}/`, { method: 'DELETE' }, accessToken);
+      setMonthlyNeeds(old => old.filter(need => need.id !== id));
+      if (editingNeed === id) resetNeedForm();
+    } catch (error) { setNeedsError(error instanceof Error ? error.message : 'No se pudo eliminar.'); }
+    finally { setNeedsLoading(false); }
+  }
 
   async function addItem(kind: 'task' | 'note') {
     const title = kind === 'task' ? newTask.trim() : noteTitle.trim();
@@ -379,7 +438,7 @@ export default function App() {
     clearSession();
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
-    setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
+    setMonthlyNeeds([]); resetNeedForm(); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
 
   const nav = [
@@ -758,11 +817,90 @@ export default function App() {
             </Stack>
             <Typography color="text.secondary" sx={{ mb: 3 }}>Ideas y decisiones para construir lo que soñamos juntos.</Typography>
             <Box className="two-column">
-              <Panel title="Finanzas" icon={<WalletRounded />} action={<Chip label="Próximamente" size="small" />}>
-                <Typography variant="body2" color="text.secondary">Ingresos, gastos, inversiones y compras. Cada persona decidirá qué información comparte; no es necesario que ambos tengan ingresos.</Typography>
+              <Panel title="Finanzas" icon={<WalletRounded />}
+                action={<Button size="small" onClick={() => navigate('finances')}>Entrar</Button>}>
+                <Typography variant="body2" color="text.secondary">
+                  Empieza con las necesidades mensuales. Regístralas en tu espacio individual y decide cuáles compartir.
+                </Typography>
+                <Chip label="Necesidades mensuales disponibles" color="success" size="small" sx={{ mt: 2 }} />
               </Panel>
               <Panel title="Metas y proyectos" icon={<FavoriteRounded />} action={<Chip label="Próximamente" size="small" />}>
                 <Typography variant="body2" color="text.secondary">Sueños, planes y objetivos que quieran construir juntos.</Typography>
+              </Panel>
+            </Box>
+          </Box>}
+          {page === 'finances' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Stack direction="row" alignItems="center" gap={2} sx={{ mb: 1 }}>
+              <WalletRounded color="primary" sx={{ fontSize: 34 }} />
+              <Typography variant="h4">Finanzas</Typography>
+            </Stack>
+            <Typography color="text.secondary" sx={{ mb: 3 }}>
+              Organiza tus necesidades mensuales. Los demás módulos financieros estarán disponibles próximamente.
+            </Typography>
+            <Panel title="Necesidades mensuales" icon={<ChecklistRounded />}>
+              <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
+                {scope === 'personal' ? 'Esta es tu lista individual. Comparte únicamente lo que decidas.' :
+                  'Solo aparecen las necesidades que cada miembro decidió compartir. Sus valores son informativos, no pagos automáticos.'}
+              </Typography>
+              {needsError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setNeedsError('')}>{needsError}</Alert>}
+              {needsLoading && <LinearProgress sx={{ mb: 2 }} />}
+              {demo ? <Alert severity="info">Inicia sesión para crear y guardar necesidades reales.</Alert> : <>
+                {scope === 'personal' && <Box component="form" onSubmit={event => { event.preventDefault(); void saveNeed(); }}
+                  sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr' }, gap: 2, mb: 3 }}>
+                  <TextField required label="Nombre de la necesidad" value={needName}
+                    inputProps={{ maxLength: 150 }} onChange={e => setNeedName(e.target.value)} />
+                  <TextField required type="number" label="Costo mensual (MXN)" value={needCost}
+                    inputProps={{ min: 0, step: '0.01' }} onChange={e => setNeedCost(e.target.value)} />
+                  <TextField select label="Prioridad" value={needPriority}
+                    onChange={e => setNeedPriority(e.target.value as MonthlyNeed['priority'])}>
+                    {needPriorities.map(p => <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>)}
+                  </TextField>
+                  <FormControlLabel control={<Checkbox checked={needShared} onChange={e => setNeedShared(e.target.checked)} />}
+                    label="Compartir con mi pareja" />
+                  <Stack direction="row" spacing={1}>
+                    <Button type="submit" variant="contained" disabled={needsLoading || !needName.trim() || !needCost.trim()}>
+                      {editingNeed ? 'Guardar cambios' : 'Añadir necesidad'}
+                    </Button>
+                    {editingNeed !== null && <Button onClick={resetNeedForm}>Cancelar</Button>}
+                  </Stack>
+                </Box>}
+                <Divider sx={{ mb: 2 }} />
+                {monthlyNeeds.length === 0 ? <Typography color="text.secondary">
+                  {scope === 'personal' ? 'Aún no tienes necesidades registradas.' :
+                    'No hay necesidades compartidas todavía.'}
+                </Typography> : <Stack spacing={1}>
+                  {monthlyNeeds.map(need => <Card key={need.id} variant="outlined" sx={{ boxShadow: 'none' }}>
+                    <CardContent sx={{ '&:last-child': { pb: 2 } }}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography fontWeight={700}>{need.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">{scope === 'shared' ? `Registrada por ${need.owner_name}` : need.shared ? 'Visible para tu pareja' : 'Solo tú puedes verla'}</Typography>
+                        </Box>
+                        <Chip size="small" variant="outlined" label={needPriorities.find(p => p.value === need.priority)?.label || need.priority} />
+                        <Typography fontWeight={700}>{currency(Number(need.cost))}/mes</Typography>
+                        {scope === 'personal' && <Stack direction="row" gap={0.5}>
+                          <Button size="small" onClick={() => {
+                            setEditingNeed(need.id); setNeedName(need.name); setNeedCost(need.cost);
+                            setNeedPriority(need.priority); setNeedShared(need.shared);
+                          }}>Editar</Button>
+                          <Button size="small" color="error" onClick={() => void removeNeed(need.id)}>Eliminar</Button>
+                        </Stack>}
+                      </Stack>
+                    </CardContent>
+                  </Card>)}
+                  <Stack direction="row" justifyContent="space-between" sx={{ pt: 2 }}>
+                    <Typography fontWeight={600}>Total mensual {scope === 'shared' ? 'compartido' : 'individual'}</Typography>
+                    <Typography fontWeight={700}>{currency(monthlyNeeds.reduce((sum, need) => sum + Number(need.cost), 0))}</Typography>
+                  </Stack>
+                </Stack>}
+              </>}
+            </Panel>
+            <Box className="two-column">
+              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Chip size="small" label="Próximamente" />}>
+                <Typography variant="body2" color="text.secondary">Más adelante podrás decidir qué información financiera mostrar a tu pareja.</Typography>
+              </Panel>
+              <Panel title="Compras e inversiones" icon={<ShoppingCartRounded />} action={<Chip size="small" label="Próximamente" />}>
+                <Typography variant="body2" color="text.secondary">Planeación de compras, ahorro y otras metas económicas.</Typography>
               </Panel>
             </Box>
           </Box>}
