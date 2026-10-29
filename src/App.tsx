@@ -283,7 +283,7 @@ export default function App() {
     { value: 'home' as const, label: 'Inicio', icon: <HomeRounded /> },
     { value: 'tasks' as const, label: 'Tareas', icon: <ChecklistRounded /> },
     { value: 'budget' as const, label: 'Vivir juntos', icon: <WalletRounded /> },
-    { value: 'profile' as const, label: 'Perfil', icon: <PersonOutlineRounded /> }
+    { value: 'profile' as const, label: 'Configurar', icon: <SettingsRounded /> }
   ];
 
   const visibleTasks = demo ? initialTasks.map((task, index) => ({
@@ -427,6 +427,10 @@ export default function App() {
             {!demo && <Button size="small" variant="outlined" onClick={() => navigate('pair')} sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
               {paired ? 'Invitación' : 'Vincular pareja'}
             </Button>}
+            <Button size="small" variant="outlined" startIcon={<SettingsRounded />} onClick={() => navigate('profile')}
+              sx={{ display: { xs: 'none', md: 'inline-flex' } }}>Administrar</Button>
+            <IconButton aria-label="Administrar mi espacio" onClick={() => navigate('profile')}
+              sx={{ display: { xs: 'inline-flex', md: 'none' } }}><SettingsRounded /></IconButton>
             <IconButton aria-label="Cambiar tema" onClick={() => setThemeName(t => t === 'light' ? 'dark' : t === 'dark' ? 'premium' : 'light')}>
               {themeName === 'dark' ? <LightModeRounded /> : <DarkModeRounded />}
             </IconButton>
@@ -615,10 +619,13 @@ export default function App() {
             </Panel>}
           </Box>}
           {page === 'profile' && <Box sx={{ maxWidth: 660, mx: 'auto' }}>
-            <Typography variant="h4" gutterBottom>Perfil y preferencias</Typography>
-            <Panel title="Personaliza tu espacio" icon={<FavoriteRounded />}>
+            <Typography variant="h4" gutterBottom>Administración de mi espacio</Typography>
+            <Typography color="text.secondary" sx={{ mb: 3 }}>
+              Configura el nombre que aparecerá en tu panel. La portada pública siempre conserva la marca EntreNos.
+            </Typography>
+            <Panel title="Nombre de la aplicación" icon={<FavoriteRounded />}>
               <Typography color="text.secondary" sx={{ mb: 2 }} variant="body2">
-                Elige cómo quieres llamar a tu aplicación. Este nombre reemplazará «EntreNos» dentro de tu panel; la portada pública conservará la marca original.
+                Elige cómo quieres llamar a tu aplicación. Este nombre aparece en el encabezado de tu panel individual y no modifica la marca pública EntreNos.
               </Typography>
               <Box component="form" onSubmit={event => { event.preventDefault(); void saveAppName(); }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="start">
