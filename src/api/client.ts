@@ -5,17 +5,71 @@
 const configuredUrl = import.meta.env.VITE_API_URL?.trim();
 const base = (configuredUrl || 'https://entrenos-backendservices.onrender.com/api/v1').replace(/\/+$/, '');
 
+const REFRESH_KEY = 'entrenos.refresh.v1';
+let activeAccessToken: string | null = null;
+let inflightRefresh: Promise<string | null> | null = null;
+
+export function rememberSession(access: string, refresh: string, persistent: boolean) {
+  activeAccessToken = access;
+  localStorage.removeItem(REFRESH_KEY);
+  sessionStorage.removeItem(REFRESH_KEY);
+  (persistent ? localStorage : sessionStorage).setItem(REFRESH_KEY, refresh);
+}
+export function clearSession() {
+  activeAccessToken = null;
+  localStorage.removeItem(REFRESH_KEY);
+  sessionStorage.removeItem(REFRESH_KEY);
+}
+export function hasRememberedSession() {
+  return Boolean(localStorage.getItem(REFRESH_KEY) || sessionStorage.getItem(REFRESH_KEY));
+}
+async function getNewAccessToken(): Promise<string | null> {
+  const refresh = sessionStorage.getItem(REFRESH_KEY) || localStorage.getItem(REFRESH_KEY);
+  if (!refresh) return null;
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = (async () => {
+    try {
+      const response = await fetch(base + '/auth/refresh/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh }),
+      });
+      if (!response.ok) { clearSession(); return null; }
+      const result = await response.json() as { access: string; refresh?: string };
+      activeAccessToken = result.access;
+      if (result.refresh) {
+        const persistent = Boolean(localStorage.getItem(REFRESH_KEY));
+        rememberSession(result.access, result.refresh, persistent);
+      }
+      return result.access;
+    } catch {
+      return null;
+    } finally { inflightRefresh = null; }
+  })();
+  return inflightRefresh;
+}
+export async function restoreSession(): Promise<string | null> {
+  if (!hasRememberedSession()) return null;
+  return getNewAccessToken();
+}
+
 export async function api<T>(path: string, options: RequestInit = {}, accessToken?: string): Promise<T> {
   let response: Response;
+  const endpoint = base + (path.startsWith('/') ? path : '/' + path);
+  const requestWithToken = (token: string | null) => fetch(endpoint, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...options.headers,
+    },
+  });
   try {
-    response = await fetch(base + (path.startsWith('/') ? path : '/' + path), {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(accessToken ? { Authorization: 'Bearer ' + accessToken } : {}),
-        ...options.headers,
-      },
-    });
+    response = await requestWithToken(accessToken || activeAccessToken);
+    if (response.status === 401 && hasRememberedSession()) {
+      const renewed = await getNewAccessToken();
+      if (renewed) response = await requestWithToken(renewed);
+    }
   } catch {
     throw new Error('No pudimos conectar con el servidor de EntreNos. Revisa la URL de la API y la configuración CORS de Render.');
   }
