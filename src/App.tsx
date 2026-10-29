@@ -100,7 +100,6 @@ export default function App() {
   const invitationLink = generatedCode
     ? `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(generatedCode)}`
     : '';
-  const [tasks, setTasks] = useState(initialTasks);
   const [newTask, setNewTask] = useState('');
   const [budgetTab, setBudgetTab] = useState(0);
   const [taskTab, setTaskTab] = useState(0);
@@ -109,6 +108,7 @@ export default function App() {
   const [itemsLoading, setItemsLoading] = useState(false);
   const [noteTitle, setNoteTitle] = useState('');
   const [noteContent, setNoteContent] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [itemError, setItemError] = useState('');
   const scopeLabel = scope === 'personal' ? 'Mi espacio' : 'Nuestro espacio';
   const inApp = demo || Boolean(accessToken);
@@ -139,13 +139,19 @@ export default function App() {
     }
     setLoading(true); setItemError('');
     try {
-      const result = await api<WorkspaceItem>(`/workspace/items/?scope=${scope}`, {
-        method: 'POST',
-        body: JSON.stringify({ kind, title, content: kind === 'note' ? noteContent : '', priority: 'medium' }),
+      const editing = kind === 'note' && editingNoteId !== null;
+      const result = await api<WorkspaceItem>(editing
+        ? `/workspace/items/${editingNoteId}/?scope=${scope}`
+        : `/workspace/items/?scope=${scope}`, {
+        method: editing ? 'PATCH' : 'POST',
+        body: JSON.stringify({ ...(editing ? {} : { kind }), title,
+          content: kind === 'note' ? noteContent : '', priority: 'medium' }),
       }, accessToken);
-      setItems(old => [result, ...old]);
+      setItems(old => editing
+        ? old.map(item => item.id === editingNoteId ? result : item)
+        : [result, ...old]);
       if (kind === 'task') setNewTask('');
-      else { setNoteTitle(''); setNoteContent(''); }
+      else { setNoteTitle(''); setNoteContent(''); setEditingNoteId(null); }
     } catch (error) { setItemError(error instanceof Error ? error.message : 'No se pudo guardar.'); }
     finally { setLoading(false); }
   }
@@ -412,7 +418,7 @@ export default function App() {
         <Container maxWidth={false} sx={{ maxWidth: '1500px', px: { xs: 2, sm: 3, lg: 5 }, pt: { xs: 3, md: 4 }, pb: { xs: 12, md: 5 } }}>
           {(demo || page === 'home') && <Alert severity="info" sx={{ mb: 2 }}>
             Las tareas, notas, recuerdos y finanzas mostrados son datos ilustrativos; todavía no se guardan en el servidor.
-            <Button size="small" sx={{ ml: 1 }} onClick={signOut}>Salir de demo</Button>
+            {demo && <Button size="small" sx={{ ml: 1 }} onClick={signOut}>Salir de demo</Button>}
           </Alert>}
           {message && <Alert severity="info" onClose={() => setMessage('')} sx={{ mb: 2 }}>{message}</Alert>}
           {itemError && <Alert severity="error" onClose={() => setItemError('')} sx={{ mb: 2 }}>{itemError}</Alert>}
@@ -496,13 +502,21 @@ export default function App() {
                   visibleNotes.length ? visibleNotes.map(note => <Box key={note.id} className="note-card note-cream">
                     <Typography fontWeight={700}>{note.title}</Typography>
                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', flex: 1 }}>{note.content}</Typography>
-                    <Button size="small" color="error" onClick={() => void removeItem(note)}>Eliminar</Button>
+                    <Stack direction="row" spacing={1}>
+                      <Button size="small" onClick={() => { setEditingNoteId(note.id); setNoteTitle(note.title); setNoteContent(note.content); }}>Editar</Button>
+                      <Button size="small" color="error" onClick={() => void removeItem(note)}>Eliminar</Button>
+                    </Stack>
                   </Box>) : <Typography color="text.secondary">Aún no tienes notas guardadas.</Typography>}
                 </Box>
                 {!demo && <Stack spacing={1} sx={{ mt: 2 }}>
                   <TextField size="small" label="Título de la nota" value={noteTitle} onChange={e => setNoteTitle(e.target.value)} inputProps={{ maxLength: 150 }} />
                   <TextField size="small" multiline minRows={2} label="Contenido" value={noteContent} onChange={e => setNoteContent(e.target.value)} />
-                  <Button variant="outlined" disabled={loading || !noteTitle.trim()} onClick={() => void addItem('note')}>Guardar nota</Button>
+                  <Stack direction="row" spacing={1}>
+                    <Button variant="outlined" disabled={loading || !noteTitle.trim()} onClick={() => void addItem('note')}>
+                      {editingNoteId === null ? 'Guardar nota' : 'Guardar cambios'}
+                    </Button>
+                    {editingNoteId !== null && <Button onClick={() => { setEditingNoteId(null); setNoteTitle(''); setNoteContent(''); }}>Cancelar</Button>}
+                  </Stack>
                 </Stack>}
               </Panel>
               <Panel title="Nuestros recuerdos" icon={<FavoriteRounded />}>
