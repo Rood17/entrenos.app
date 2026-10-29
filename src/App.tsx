@@ -436,7 +436,7 @@ export default function App() {
         </AppBar>
         <Container maxWidth={false} sx={{ maxWidth: '1500px', px: { xs: 2, sm: 3, lg: 5 }, pt: { xs: 3, md: 4 }, pb: { xs: 12, md: 5 } }}>
           {(demo || page === 'home') && <Alert severity="info" sx={{ mb: 2 }}>
-            Las tareas, notas, recuerdos y finanzas mostrados son datos ilustrativos; todavía no se guardan en el servidor.
+            Las tareas y notas se guardan en tu espacio seleccionado. El aniversario, los recuerdos y los presupuestos aún son ejemplos visuales.
             {demo && <Button size="small" sx={{ ml: 1 }} onClick={signOut}>Salir de demo</Button>}
           </Alert>}
           {message && <Alert severity="info" onClose={() => setMessage('')} sx={{ mb: 2 }}>{message}</Alert>}
