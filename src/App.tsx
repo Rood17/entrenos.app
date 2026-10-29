@@ -387,7 +387,7 @@ export default function App() {
   ];
 
   const visibleTasks = demo ? initialTasks.map((task, index) => ({
-    id: index + 1, kind: 'task' as const, title: task.name, content: '',
+    id: index + 1, kind: 'task' as const, title: task.name, content: '', tag: '',
     completed: task.done, priority: task.priority === 'Alta' ? 'high' as const : task.priority === 'Baja' ? 'low' as const : 'medium' as const
   })) : items.filter(item => item.kind === 'task');
   const visibleNotes = demo ? [] : items.filter(item => item.kind === 'note');
