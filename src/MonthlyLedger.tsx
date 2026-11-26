@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, Card, CardContent, Checkbox, Chip, Divider, FormControlLabel, LinearProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
-import { ArrowBackRounded, ArrowForwardRounded } from '@mui/icons-material';
+import { Alert, Box, Button, Card, CardContent, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, Menu, Radio, RadioGroup, FormControlLabel, LinearProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { ArrowBackRounded, ArrowForwardRounded, MoreVertRounded } from '@mui/icons-material';
 import { api } from './api/client';
 
 export function currentMonth() {
@@ -18,7 +18,8 @@ function shiftMonth(month: string, delta: number) {
 }
 const money = (amount: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
 export const frequencies = [{value:'once',label:'Única'},{value:'weekly',label:'Semanal'},{value:'biweekly',label:'Cada 14 días'},{value:'monthly',label:'Mensual'},{value:'bimonthly',label:'Bimestral'},{value:'quarterly',label:'Trimestral'},{value:'halfyear',label:'Semestral'},{value:'annual',label:'Anual'}];
-type Entry = { occurrence_date: string; occurrence_amount: string; settled: boolean; frequency: string; end_date: string | null; id: number; name: string; category: string; cost?: string; amount?: string; purchase_date?: string; received_date?: string; due_date?: string; shared: boolean; purchased?: boolean; owner_share?: number; owner_name: string };
+type Entry = { original_date: string; occurrence_date: string; occurrence_amount: string; settled: boolean; frequency: string; end_date: string | null; id: number; name: string; category: string; cost?: string; amount?: string; purchase_date?: string; received_date?: string; due_date?: string; shared: boolean; purchased?: boolean; owner_share?: number; owner_name: string };
+type EditScope = 'single' | 'future' | 'all';
 type Draft = { frequency: string; end: string; name: string; category: string; amount: string; date: string; shared: boolean; purchased: boolean; share: number };
 type Props = { kind: 'purchases' | 'incomes' | 'commitments'; scope: 'personal' | 'shared'; token: string; demo: boolean; paired: boolean; month: string; onMonth: (value: string) => void };
 export function MonthlyLedger({ kind, scope, token, demo, paired, month, onMonth }: Props) {
@@ -27,14 +28,19 @@ export function MonthlyLedger({ kind, scope, token, demo, paired, month, onMonth
   const categories = income ? ['Salario', 'Negocio', 'Comisiones', 'Rentas', 'Bonos', 'Otros'] : commitment ? ['Vivienda','Electricidad','Agua','Gas','Internet','Mantenimiento','Seguridad','Otros'] : ['Supermercado', 'Limpieza', 'Higiene', 'Mascotas', 'Equipamiento', 'Otros'];
   const fresh = (): Draft => ({ name: '', category: categories[0], amount: '', date: dateForMonth(month), shared: false, purchased: false, share: 100, frequency: commitment ? 'monthly' : 'once', end: '' });
   const [draft, setDraft] = useState<Draft>(fresh);
-  const [editing, setEditing] = useState<number | null>(null);
+  const [selection, setSelection] = useState<Entry | null>(null);
+  const [action, setAction] = useState<'edit' | 'delete'>('edit');
+  const [editScope, setEditScope] = useState<EditScope>('single');
+  const [editDraft, setEditDraft] = useState<Draft>(fresh);
+  const [dialogError, setDialogError] = useState('');
+  const [menu, setMenu] = useState<{ anchor: HTMLElement; entry: Entry } | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const endpoint = '/finances/' + kind + '/';
   useEffect(() => {
-    setEntries([]); setError(''); setEditing(null); setDraft(fresh());
+    setEntries([]); setError(''); setSelection(null); setDraft(fresh());
     if (!token || demo) return;
     let active = true;
     setBusy(true);
@@ -53,43 +59,44 @@ export function MonthlyLedger({ kind, scope, token, demo, paired, month, onMonth
     try {
       const body = income ? { name: draft.name.trim(), category: draft.category, amount: draft.amount, received_date: draft.date, shared: draft.shared, received: draft.purchased, frequency: draft.frequency, end_date: draft.end || null } : commitment ? { name: draft.name.trim(), category: draft.category, cost: draft.amount, due_date: draft.date, shared: draft.shared, paid: draft.purchased, owner_share: draft.share, frequency: draft.frequency, end_date: draft.end || null, origin: 'home' } :
         { name: draft.name.trim(), category: draft.category, cost: draft.amount, purchase_date: draft.date, shared: draft.shared, purchased: draft.purchased, owner_share: draft.share, frequency: draft.frequency, end_date: draft.end || null };
-      await api<Entry>(endpoint + (editing === null ? '' : editing + '/'), { method: editing === null ? 'POST' : 'PATCH', body: JSON.stringify(body) }, token);
+      await api<Entry>(endpoint, { method: 'POST', body: JSON.stringify(body) }, token);
       setRevision(n => n + 1);
     } catch(e) { setError(e instanceof Error ? e.message : 'No se pudo guardar.'); }
-    finally { setBusy(false); }
-  }
-  async function remove(id: number) {
-    if (!token || busy || scope !== 'personal' || !window.confirm('¿Eliminar este registro?')) return;
-    setBusy(true); setError('');
-    try { await api<unknown>(endpoint + id + '/', { method: 'DELETE' }, token); setRevision(n => n + 1); }
-    catch(e) { setError(e instanceof Error ? e.message : 'No se pudo eliminar.'); }
     finally { setBusy(false); }
   }
   async function confirm(entry: Entry, settled: boolean, amount = entry.occurrence_amount, skipped = false) {
     if (!token || busy || scope !== 'personal') return;
     setBusy(true); setError('');
     try {
-      await api('/finances/occurrences/' + kind + '/' + entry.id + '/', { method: 'POST', body: JSON.stringify({ date: entry.occurrence_date, amount, settled, skipped }) }, token);
+      await api('/finances/occurrences/' + kind + '/' + entry.id + '/', { method: 'POST', body: JSON.stringify({ date: entry.original_date, amount, settled, skipped }) }, token);
       setRevision(n => n + 1);
     } catch(e) { setError(e instanceof Error ? e.message : 'No se pudo confirmar.'); }
     finally { setBusy(false); }
   }
-  async function finish(entry: Entry) {
-    if (!token || busy || scope !== 'personal') return;
-    const end = window.prompt('Última fecha incluida en la recurrencia (AAAA-MM-DD)', entry.occurrence_date);
-    if (!end) return;
-    setBusy(true); setError('');
-    try {
-      await api(endpoint + entry.id + '/', { method: 'PATCH', body: JSON.stringify({ end_date: end }) }, token);
-      setRevision(n => n + 1);
-    } catch(e) { setError(e instanceof Error ? e.message : 'No se pudo finalizar.'); }
-    finally { setBusy(false); }
+  function chooseScope(entry: Entry, nextAction: 'edit' | 'delete', nextScope: EditScope = 'single') {
+    setMenu(null); setSelection(entry); setAction(nextAction); setEditScope(nextScope); setDialogError('');
+    fillEdit(entry, nextScope);
   }
-  function editOccurrence(entry: Entry) {
-    const amount = window.prompt('Importe de este movimiento (MXN)', entry.occurrence_amount);
-    if (amount === null) return;
-    if (!/^\d+(\.\d{1,2})?$/.test(amount.trim())) { setError('Ingresa un importe válido con hasta dos decimales.'); return; }
-    void confirm(entry, entry.settled, amount.trim());
+  function fillEdit(entry: Entry, nextScope: EditScope) {
+    const start = entry.received_date || entry.purchase_date || entry.due_date || entry.original_date;
+    setEditDraft({ name: entry.name, category: entry.category, amount: nextScope === 'single' ? entry.occurrence_amount : entry.amount ?? entry.cost ?? '', date: nextScope === 'all' ? start : nextScope === 'future' ? entry.original_date : entry.occurrence_date, shared: entry.shared, share: entry.owner_share ?? 100, purchased: entry.settled, frequency: entry.frequency, end: entry.end_date || '' });
+  }
+  async function applyAction() {
+    if (!selection || busy || scope !== 'personal' || !token) return;
+    if (action === 'edit' && (!editDraft.amount.trim() || !Number.isFinite(Number(editDraft.amount)) || Number(editDraft.amount) < 0 || !editDraft.date || (editScope !== 'single' && (!editDraft.name.trim() || (!!editDraft.end && editDraft.end < editDraft.date))))) {
+      setDialogError('Verifica el concepto, importe y fechas.'); return;
+    }
+    setBusy(true); setDialogError('');
+    try {
+      if (editScope === 'single') {
+        await api('/finances/occurrences/' + kind + '/' + selection.id + '/', { method: 'POST', body: JSON.stringify({ date: selection.original_date, amount: action === 'edit' ? editDraft.amount : selection.occurrence_amount, moved_date: action === 'edit' ? editDraft.date : selection.occurrence_date, settled: selection.settled, skipped: action === 'delete' }) }, token);
+      } else {
+        const changes = { name: editDraft.name.trim(), category: editDraft.category, [income ? 'amount' : 'cost']: editDraft.amount, [income ? 'received_date' : commitment ? 'due_date' : 'purchase_date']: editDraft.date, frequency: editDraft.frequency, end_date: editDraft.end || null, shared: editDraft.shared, ...(!income ? { owner_share: editDraft.share } : {}) };
+        await api('/finances/series/' + kind + '/' + selection.id + '/', { method: 'POST', body: JSON.stringify({ date: selection.original_date, scope: editScope, action, changes: action === 'edit' ? changes : {} }) }, token);
+      }
+      setSelection(null); setRevision(n => n + 1);
+    } catch(e) { setDialogError(e instanceof Error ? e.message : 'No se pudo aplicar el cambio.'); }
+    finally { setBusy(false); }
   }
   const total = entries.reduce((sum, e) => sum + (e.settled ? Number(e.occurrence_amount) : 0), 0);
   const pending = entries.reduce((sum, e) => sum + (!e.settled ? Number(e.occurrence_amount) : 0), 0);
@@ -114,20 +121,58 @@ export function MonthlyLedger({ kind, scope, token, demo, paired, month, onMonth
         {<FormControlLabel control={<Checkbox checked={draft.purchased} onChange={e => setDraft(d => ({ ...d, purchased: e.target.checked }))} />} label={income ? "Primer ingreso recibido" : "Primera compra realizada"} />}
         <FormControlLabel control={<Checkbox checked={draft.shared} disabled={!paired} onChange={e => setDraft(d => ({ ...d, shared: e.target.checked, share: 100 }))} />} label="Compartir con mi pareja" />
         {!income && draft.shared && <TextField type="number" label="Mi porcentaje (%)" value={draft.share} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => setDraft(d => ({ ...d, share: Number(e.target.value) }))} />}
-        <Stack direction="row" gap={1}><Button type="submit" variant="contained" disabled={busy || !draft.name.trim() || !draft.amount.trim()}>{editing === null ? 'Añadir' : 'Guardar cambios'}</Button>{editing !== null && <Button onClick={() => { setEditing(null); setDraft(fresh()); }}>Cancelar</Button>}</Stack>
+        <Stack direction="row" gap={1}><Button type="submit" variant="contained" disabled={busy || !draft.name.trim() || !draft.amount.trim()}>Añadir</Button></Stack>
       </Box>}
       <Divider sx={{ mb: 2 }} />
       <Stack spacing={1.5}>
         {!entries.length && !busy && <Typography color="text.secondary">No hay registros en este mes.</Typography>}
-        {entries.map(entry => <Card key={entry.id + '-' + entry.occurrence_date} variant="outlined"><CardContent><Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}>
+        {entries.map(entry => <Card key={entry.id + '-' + entry.original_date} variant="outlined"><CardContent><Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}>
           <Box sx={{ flex: 1 }}><Typography fontWeight={700}>{entry.name}</Typography><Typography variant="caption" color="text.secondary">{entry.category} · {entry.occurrence_date} · {scope === 'shared' ? entry.owner_name : entry.shared ? 'Compartido' : 'Privado'}</Typography></Box>
           <Chip size="small" label={entry.settled ? (income ? 'Recibido' : 'Pagado') : 'Pendiente'} color={entry.settled ? 'success' : 'default'} />
           <Typography fontWeight={700}>{money(Number(entry.occurrence_amount))}</Typography>
-          {scope === 'personal' && <Stack direction="row" flexWrap="wrap"><Button size="small" disabled={busy} onClick={() => void confirm(entry, !entry.settled)}>{entry.settled ? 'Desmarcar' : income ? 'Marcar recibido' : 'Marcar pagado'}</Button><Button size="small" disabled={busy} onClick={() => editOccurrence(entry)}>Editar importe</Button>{entry.frequency !== 'once' && <Button size="small" disabled={busy} onClick={() => void finish(entry)}>Finalizar recurrencia</Button>}<Button size="small" disabled={busy || entry.frequency !== 'once'} onClick={() => { setEditing(entry.id); setDraft({ name: entry.name, category: entry.category, amount: entry.amount ?? entry.cost ?? '', date: entry.received_date || entry.purchase_date || entry.due_date || dateForMonth(month), shared: entry.shared, purchased: entry.settled, share: entry.owner_share ?? 100, frequency: entry.frequency, end: entry.end_date || '' }); }}>Editar registro</Button><Button size="small" color="error" disabled={busy || entry.frequency !== 'once'} onClick={() => void remove(entry.id)}>Eliminar</Button></Stack>}
+          {scope === 'personal' && <Stack direction="row" flexWrap="wrap" alignItems="center">
+            <Button size="small" disabled={busy} onClick={() => void confirm(entry, !entry.settled)}>{entry.settled ? 'Desmarcar' : income ? 'Marcar recibido' : 'Marcar pagado'}</Button>
+            <Button size="small" disabled={busy} onClick={() => chooseScope(entry, 'edit')}>Editar</Button>
+            <IconButton size="small" aria-label={'Más acciones de ' + entry.name} disabled={busy} onClick={e => setMenu({ anchor: e.currentTarget, entry })}><MoreVertRounded /></IconButton>
+          </Stack>}
+
         </Stack></CardContent></Card>)}
         <Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>{income ? 'Ingresos del mes' : 'Compras realizadas'}</Typography><Typography variant="h6">{money(total)}</Typography></Stack>
         {<Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Pendientes</Typography><Typography>{money(pending)}</Typography></Stack>}
       </Stack>
     </>}
+    <Menu anchorEl={menu?.anchor} open={!!menu} onClose={() => setMenu(null)}>
+      <MenuItem onClick={() => { if (menu) chooseScope(menu.entry, 'delete'); }}>Eliminar</MenuItem>
+      {menu?.entry.frequency !== 'once' && <MenuItem onClick={() => { if (menu) chooseScope(menu.entry, 'delete', 'future'); }}>Finalizar desde este movimiento</MenuItem>}
+    </Menu>
+    <Dialog open={!!selection} onClose={() => { if (!busy) setSelection(null); }} fullWidth maxWidth="sm">
+      <DialogTitle>{action === 'edit' ? 'Editar' : 'Eliminar'} {selection?.name}</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2}>
+          {dialogError && <Alert severity="error">{dialogError}</Alert>}
+          {selection?.frequency !== 'once' && <RadioGroup value={editScope} onChange={e => { const next = e.target.value as EditScope; setEditScope(next); if (selection) fillEdit(selection, next); }}>
+            <FormControlLabel value="single" control={<Radio />} label="Solo este movimiento" />
+            <FormControlLabel value="future" control={<Radio />} label="Este movimiento y los siguientes" />
+            <FormControlLabel value="all" control={<Radio />} label="Toda la recurrencia" />
+          </RadioGroup>}
+          {action === 'delete' ? <Alert severity="warning">{editScope === 'single' ? 'Se eliminará solo el movimiento seleccionado, incluso si estaba confirmado.' : editScope === 'future' ? 'Se eliminarán este movimiento y todos los siguientes, incluidos los confirmados.' : 'Se eliminará toda esta serie, incluidos los movimientos confirmados. Esta acción no se puede deshacer.'}</Alert> : <>
+            {editScope !== 'single' && <>
+              <TextField label="Concepto" value={editDraft.name} onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))} inputProps={{ maxLength: 150 }} />
+              <TextField select label="Categoría" value={editDraft.category} onChange={e => setEditDraft(d => ({ ...d, category: e.target.value }))}>{[...new Set([...categories, editDraft.category])].map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}</TextField>
+              <TextField select label="Periodicidad" value={editDraft.frequency} onChange={e => setEditDraft(d => ({ ...d, frequency: e.target.value }))}>{frequencies.map(f => <MenuItem key={f.value} value={f.value}>{f.label}</MenuItem>)}</TextField>
+            </>}
+            <TextField label="Importe (MXN)" type="number" value={editDraft.amount} inputProps={{ min: 0, step: '0.01' }} onChange={e => setEditDraft(d => ({ ...d, amount: e.target.value }))} />
+            <TextField label={editScope === 'single' ? 'Fecha del movimiento' : 'Fecha de inicio'} type="date" InputLabelProps={{ shrink: true }} value={editDraft.date} onChange={e => setEditDraft(d => ({ ...d, date: e.target.value }))} />
+            {editScope !== 'single' && <>
+              <TextField type="date" label="Finalización (opcional)" InputLabelProps={{ shrink: true }} value={editDraft.end} onChange={e => setEditDraft(d => ({ ...d, end: e.target.value }))} />
+              <FormControlLabel control={<Checkbox checked={editDraft.shared} disabled={!paired} onChange={e => setEditDraft(d => ({ ...d, shared: e.target.checked, share: e.target.checked ? d.share : 100 }))} />} label="Compartir con mi pareja" />
+              {!income && editDraft.shared && <TextField label="Mi porcentaje (%)" type="number" value={editDraft.share} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => setEditDraft(d => ({ ...d, share: Number(e.target.value) }))} />}
+              <Alert severity="info">{editScope === 'future' ? 'El historial anterior al corte se conserva. Si hay pagos confirmados posteriores, desmárcalos antes de cambiar la serie.' : 'Los importes confirmados se conservan. Los demás datos de la serie pueden cambiar; no se permiten cambios de calendario que eliminen confirmaciones.'}</Alert>
+            </>}
+          </>}
+        </Stack>
+      </DialogContent>
+      <DialogActions><Button disabled={busy} onClick={() => setSelection(null)}>Cancelar</Button><Button disabled={busy} color={action === 'delete' ? 'error' : 'primary'} variant="contained" onClick={() => void applyAction()}>{action === 'delete' ? 'Confirmar eliminación' : 'Guardar cambios'}</Button></DialogActions>
+    </Dialog>
   </CardContent></Card>;
 }
