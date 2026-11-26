@@ -877,6 +877,35 @@ export default function App() {
                   </Typography>
                 </Box>
               </Box>
+              <Box className="shortcut-strip" aria-label="Mis accesos directos">
+                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.2, gap: 1 }}>
+                  <Typography variant="subtitle1" fontWeight={700}>Mis accesos directos</Typography>
+                  <Typography variant="caption" color="text.secondary">Personaliza tus favoritos</Typography>
+                </Stack>
+                <Box className="shortcut-grid">
+                  {shortcutIds.map((id, index) => {
+                    const shortcut = shortcutCatalog.find(item => item.id === id);
+                    if (!shortcut) return null;
+                    return <Button key={id} color="inherit" variant="outlined"
+                      className={'shortcut-tile' + (index >= 2 ? ' shortcut-extra-mobile' : '')}
+                      onClick={() => openShortcut(id)} aria-label={'Ir a ' + shortcut.label}
+                      sx={{ borderColor: 'divider', bgcolor: 'background.paper', textTransform: 'none',
+                        borderRadius: 2.5, color: 'text.primary', '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' } }}>
+                      <Box sx={{ color: 'primary.main', display: 'flex' }}>{shortcut.icon}</Box>
+                      <Typography variant="body2" fontWeight={600} textAlign="center" sx={{ fontSize: '0.8rem', lineHeight: 1.2 }}>
+                        {shortcut.label}
+                      </Typography>
+                    </Button>;
+                  })}
+                  <Button color="inherit" variant="outlined" className="shortcut-tile shortcut-add"
+                    onClick={openShortcutEditor} aria-label="Añadir o editar accesos directos"
+                    sx={{ borderColor: 'divider', color: 'text.secondary', textTransform: 'none',
+                      borderRadius: 2.5, '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' } }}>
+                    <AddRounded sx={{ fontSize: 27 }} />
+                    <Typography variant="body2" fontWeight={600}>Editar</Typography>
+                  </Button>
+                </Box>
+              </Box>
               <Panel title="Borrador de pensamientos" icon={<PushPinRounded />}>
                 <Box className="notes-grid">
                   {demo ? <Typography color="text.secondary">Anota ideas para conversar, negociar o compartir en algún momento.</Typography> :
@@ -927,15 +956,14 @@ export default function App() {
                 action={<Button size="small" onClick={() => navigate('budget')}>Entrar</Button>}>
                 <Typography color="text.secondary" variant="body2">Organicen juntos la limpieza, los acuerdos y las normas para convivir.</Typography>
                 <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
-                  <Chip label="Limpieza" size="small" /><Chip label="Acuerdos" size="small" />
-                  <Chip label="Compras del hogar" size="small" />
+                  {shortcutChip('cleaning')}{shortcutChip('agreements')}{shortcutChip('shopping')}
                 </Stack>
               </Panel>
               <Panel title="Nuestro fuego sagrado" icon={<LocalFireDepartmentRounded />}
                 action={<Button size="small" onClick={() => navigate('fire')}>Explorar</Button>}>
                 <Typography variant="body2" color="text.secondary">Metas, proyectos y decisiones que alimentan nuestra vida juntos.</Typography>
-                <Stack direction="row" gap={1} sx={{ mt: 2 }}>
-                  <Chip label="Finanzas" size="small" /><Chip label="Proyectos" size="small" />
+                <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
+                  {shortcutChip('finances')}{shortcutChip('projects')}
                 </Stack>
               </Panel>
             </Box>
@@ -964,19 +992,19 @@ export default function App() {
             <Typography variant="h4" gutterBottom>Nuestro hogar</Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>Pequeños acuerdos para construir una convivencia más sencilla.</Typography>
             <Box className="two-column">
-              <Panel title="Limpieza y responsabilidades" icon={<ChecklistRounded />}
+              <Panel title="Limpieza y responsabilidades" icon={<ChecklistRounded />} sectionId="home-cleaning"
                 action={<Chip size="small" label="Próximamente" />}>
                 <Typography color="text.secondary" variant="body2">
                   Aquí organizaremos las tareas de limpieza, turnos y responsabilidades del hogar.
                 </Typography>
               </Panel>
-              <Panel title="Normas y acuerdos de convivencia" icon={<FavoriteRounded />}
+              <Panel title="Normas y acuerdos de convivencia" icon={<FavoriteRounded />} sectionId="home-agreements"
                 action={<Chip size="small" label="Próximamente" />}>
                 <Typography color="text.secondary" variant="body2">
                   Un espacio para definir juntos acuerdos, límites y reglas que faciliten la convivencia.
                 </Typography>
               </Panel>
-              <Panel title="Compras y gastos del hogar" icon={<ShoppingCartRounded />}
+              <Panel title="Compras y gastos del hogar" icon={<ShoppingCartRounded />} sectionId="home-shopping"
                 action={<Chip size="small" label="Próximamente" />}>
                 <Typography color="text.secondary" variant="body2">
                   Aquí reuniremos las compras necesarias para la casa. Los importes podrán consultarse después en Finanzas, con privacidad configurable.
@@ -1004,7 +1032,7 @@ export default function App() {
                 </Typography>
                 <Chip label="Necesidades mensuales disponibles" color="success" size="small" sx={{ mt: 2 }} />
               </Panel>
-              <Panel title="Metas y proyectos" icon={<FavoriteRounded />} action={<Chip label="Próximamente" size="small" />}>
+              <Panel title="Metas y proyectos" icon={<FavoriteRounded />} sectionId="fire-projects" action={<Chip label="Próximamente" size="small" />}>
                 <Typography variant="body2" color="text.secondary">Sueños, planes y objetivos que quieran construir juntos.</Typography>
               </Panel>
             </Box>
@@ -1159,6 +1187,47 @@ export default function App() {
           <DialogActions>
             <Button onClick={() => setCoverDialogOpen(false)}>Cancelar</Button>
             <Button variant="contained" disabled={loading || demo} onClick={() => void saveCoverPhoto()}>Guardar portada</Button>
+          </DialogActions>
+        </Dialog>
+        <Dialog open={shortcutDialogOpen} onClose={() => { if (!shortcutsSaving) setShortcutDialogOpen(false); }} fullWidth maxWidth="sm">
+          <DialogTitle>Personalizar accesos directos</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Selecciona hasta cuatro secciones. Puedes cambiar el orden con las flechas.
+              En el celular se muestran tus dos primeras opciones y el botón para editar.
+            </Typography>
+            {shortcutsError && <Alert severity="error" sx={{ mb: 2 }}>{shortcutsError}</Alert>}
+            <Stack spacing={1}>
+              {shortcutCatalog.map(shortcut => {
+                const selected = shortcutDraft.includes(shortcut.id);
+                const position = shortcutDraft.indexOf(shortcut.id);
+                return <Box key={shortcut.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1,
+                  border: '1px solid', borderColor: selected ? 'primary.main' : 'divider', borderRadius: 2 }}>
+                  <Button size="small" color={selected ? 'primary' : 'inherit'} variant={selected ? 'contained' : 'text'}
+                    disabled={!selected && shortcutDraft.length >= 4}
+                    onClick={() => toggleShortcutDraft(shortcut.id)}
+                    startIcon={selected ? <CheckCircleRounded /> : <AddRounded />}
+                    sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', textTransform: 'none' }}>
+                    <Box sx={{ display: 'flex', mr: 0.8 }}>{shortcut.icon}</Box>
+                    <Typography variant="body2" fontWeight={600} textAlign="left">{shortcut.label}</Typography>
+                  </Button>
+                  {selected && <Stack direction="row" spacing={0}>
+                    <IconButton size="small" disabled={position === 0} onClick={() => reorderShortcut(shortcut.id, -1)}
+                      aria-label={'Subir ' + shortcut.label}><ArrowUpwardRounded fontSize="small" /></IconButton>
+                    <IconButton size="small" disabled={position === shortcutDraft.length - 1} onClick={() => reorderShortcut(shortcut.id, 1)}
+                      aria-label={'Bajar ' + shortcut.label}><ArrowDownwardRounded fontSize="small" /></IconButton>
+                  </Stack>}
+                </Box>;
+              })}
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+              {shortcutDraft.length} de 4 accesos seleccionados.
+              {demo ? ' En demostración los cambios no se guardarán en tu cuenta.' : ' Los cambios se guardan en tu perfil.'}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button disabled={shortcutsSaving} onClick={() => setShortcutDialogOpen(false)}>Cancelar</Button>
+            <Button variant="contained" disabled={shortcutsSaving} onClick={() => void saveShortcuts()}>Guardar accesos</Button>
           </DialogActions>
         </Dialog>
         {!desktop && page !== 'pair' && <Box className="mobile-navigation" sx={{ bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider' }}>
