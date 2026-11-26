@@ -19,15 +19,16 @@ import { buildTheme } from './theme/mui';
 import { brand, themes, pillarThemes, type Pillar, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
+import { MonthlyLedger, currentMonth } from './MonthlyLedger';
 
-type Page = 'home' | 'tasks' | 'budget' | 'home-finances' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
+type Page = 'home' | 'tasks' | 'budget' | 'home-finances' | 'home-purchases' | 'incomes' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
 type NeedCategory = string;
 type CustomNeedCategory = { value: string; name: string };
 type Commitment = { id: number; origin: string; name: string; category: string; cost: string; frequency: string; due_date: string | null; shared: boolean; owner_share: number; paid: boolean; owner_name: string; monthly_cost: string };
-type FinancialSummary = { monthly_by_origin: Record<'home' | 'fire' | 'prosperity', string>; total_monthly: string };
+type FinancialSummary = { monthly_by_origin: Record<'home' | 'fire' | 'prosperity', string>; total_monthly: string; household_purchases: string; total_with_purchases: string; income: string; income_count: number; balance: string | null; month: string };
 const emptyCommitment = { name: '', category: 'Vivienda', cost: '', frequency: 'monthly', due_date: '', shared: false, owner_share: 100, paid: false };
 type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string; shortcut_ids?: ShortcutId[] };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
@@ -51,7 +52,7 @@ const shortcutCatalog: ShortcutDefinition[] = [
   { id: 'projects', pillar: 'sacredFire', label: 'Proyectos', page: 'fire', sectionId: 'fire-projects', icon: <FavoriteRounded /> },
   { id: 'cleaning', pillar: 'home', label: 'Limpieza', page: 'budget', sectionId: 'home-cleaning', icon: <ChecklistRounded /> },
   { id: 'agreements', pillar: 'home', label: 'Acuerdos', page: 'budget', sectionId: 'home-agreements', icon: <FavoriteRounded /> },
-  { id: 'shopping', pillar: 'home', label: 'Compras del hogar', page: 'budget', sectionId: 'home-shopping', icon: <ShoppingCartRounded /> },
+  { id: 'shopping', pillar: 'home', label: 'Compras del hogar', page: 'home-purchases', icon: <ShoppingCartRounded /> },
   { id: 'tasks', pillar: 'home', label: 'Actividades y tareas', page: 'tasks', icon: <CalendarMonthRounded /> },
 ];
 const defaultShortcutIds: ShortcutId[] = ['finances', 'cleaning', 'agreements'];
@@ -170,6 +171,7 @@ export default function App() {
   const [commitments, setCommitments] = useState<Commitment[]>([]);
   const [commitmentDraft, setCommitmentDraft] = useState(emptyCommitment);
   const [commitmentId, setCommitmentId] = useState<number | null>(null);
+  const [financeMonth, setFinanceMonth] = useState(currentMonth);
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
   const [financeError, setFinanceError] = useState('');
   const [financeBusy, setFinanceBusy] = useState(false);
@@ -205,8 +207,8 @@ export default function App() {
     sacredFire: isShared ? 'Nuestro fuego sagrado' : 'Mi fuego sagrado',
     prosperity: isShared ? 'Nuestra prosperidad' : 'Mi prosperidad',
   };
-  const activePillar: Pillar | undefined = page === 'budget' || page === 'tasks' || page === 'home-finances' ? 'home' :
-    page === 'fire' ? 'sacredFire' : ['prosperity', 'finances', 'monthly-needs'].includes(page) ? 'prosperity' : undefined;
+  const activePillar: Pillar | undefined = page === 'budget' || page === 'tasks' || page === 'home-finances' || page === 'home-purchases' ? 'home' :
+    page === 'fire' ? 'sacredFire' : ['prosperity', 'finances', 'monthly-needs', 'incomes'].includes(page) ? 'prosperity' : undefined;
   const contentTheme = useMemo(() => activePillar ? buildTheme(themeName, activePillar) : theme, [theme, themeName, activePillar]);
   const inApp = demo || Boolean(accessToken);
   const palette = themes[themeName];
@@ -392,11 +394,11 @@ export default function App() {
     setFinanceBusy(true);
     const load = page === 'home-finances'
       ? api<Commitment[]>(`/finances/commitments/?origin=home&scope=${scope}`, {}, accessToken).then(data => { if (active) setCommitments(data); })
-      : api<FinancialSummary>(`/finances/summary/?scope=${scope}`, {}, accessToken).then(data => { if (active) setFinancialSummary(data); });
+      : api<FinancialSummary>(`/finances/summary/?scope=${scope}&month=${financeMonth}`, {}, accessToken).then(data => { if (active) setFinancialSummary(data); });
     load.catch(error => { if (active) setFinanceError(error instanceof Error ? error.message : 'No se pudo cargar la información financiera.'); })
       .finally(() => { if (active) setFinanceBusy(false); });
     return () => { active = false; };
-  }, [accessToken, demo, paired, scope, page]);
+  }, [accessToken, demo, paired, scope, page, financeMonth]);
 
   async function saveCommitment() {
     if (!accessToken || scope !== 'personal' || financeBusy) return;
@@ -1132,15 +1134,25 @@ export default function App() {
                 </Typography>
               </Panel>
               <Panel title="Compras y gastos del hogar" icon={<ShoppingCartRounded />} sectionId="home-shopping"
-                action={<Chip size="small" label="Próximamente" />}>
+                action={<Button size="small" onClick={() => navigate('home-purchases')}>Entrar</Button>}>
                 <Typography color="text.secondary" variant="body2">
-                  Aquí reuniremos las compras necesarias para la casa. Los importes podrán consultarse después en Finanzas, con privacidad configurable.
+                  Organiza el súper y las compras domésticas por mes. Los gastos realizados se consolidan en Prosperidad.
                 </Typography>
               </Panel>
               <Panel title="Finanzas del hogar" icon={<WalletRounded />} action={<Button size="small" onClick={() => navigate('home-finances')}>Entrar</Button>}>
                 <Typography variant="body2" color="text.secondary">Renta, servicios y gastos recurrentes de vivienda, con vencimientos y distribución de pagos.</Typography>
               </Panel>
             </Box>
+          </Box>}
+          {page === 'home-purchases' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('budget')} sx={{ mb: 2 }}>Volver a {pillarTitles.home}</Button>
+            <MonthlyLedger key={'purchases-' + scope} kind="purchases" scope={scope} token={accessToken} demo={demo} paired={paired} month={financeMonth} onMonth={setFinanceMonth} />
+            <Button onClick={() => navigate('prosperity')}>Consultar balance en Prosperidad</Button>
+          </Box>}
+          {page === 'incomes' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('finances')} sx={{ mb: 2 }}>Volver a Finanzas</Button>
+            <MonthlyLedger key={'incomes-' + scope} kind="incomes" scope={scope} token={accessToken} demo={demo} paired={paired} month={financeMonth} onMonth={setFinanceMonth} />
+            <Button onClick={() => navigate('prosperity')}>Consultar balance en Prosperidad</Button>
           </Box>}
           {page === 'home-finances' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
             <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('budget')} sx={{ mb: 2 }}>Volver a {pillarTitles.home}</Button>
@@ -1214,7 +1226,8 @@ export default function App() {
               <Typography variant="h4">{pillarTitles.prosperity}</Typography>
             </Stack>
             <Typography color="text.secondary" sx={{ mb: 3 }}>{isShared ? 'Construyan estabilidad económica respetando la privacidad de cada persona.' : 'Organiza tus recursos, tus compromisos y tus metas económicas.'}</Typography>
-            <Panel title="Compromisos mensuales consolidados" icon={<WalletRounded />}>
+            <Panel title="Balance mensual consolidado" icon={<WalletRounded />}>
+              <TextField type="month" label="Mes de consulta" InputLabelProps={{ shrink: true }} size="small" value={financeMonth} onChange={e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) setFinanceMonth(e.target.value); }} sx={{ mb: 2 }} />
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{isShared ? 'Solo registros compartidos; importes completos.' : 'Tus necesidades personales y tu parte de los gastos recurrentes, incluidos los que tu pareja te asigna.'} Los gastos anuales y bimestrales se convierten a equivalentes mensuales.</Typography>
               {financeError && <Alert severity="error">{financeError}</Alert>}
               {financeBusy && <LinearProgress />}
@@ -1224,7 +1237,11 @@ export default function App() {
                   <Button size="small" onClick={() => navigate(item.target)} sx={{ color: pillarColors[item.pillar].main }}>{item.label}</Button>
                   <Typography fontWeight={700}>{currency(Number(financialSummary.monthly_by_origin[item.key]))}</Typography>
                 </Stack>)}
-                <Divider /><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Total mensual estimado</Typography><Typography variant="h6">{currency(Number(financialSummary.total_monthly))}</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between" alignItems="center"><Button size="small" onClick={() => navigate('home-purchases')} sx={{ color: pillarColors.home.main }}>Compras del hogar realizadas</Button><Typography fontWeight={700}>{currency(Number(financialSummary.household_purchases))}</Typography></Stack>
+                <Divider /><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Compromisos y compras</Typography><Typography variant="h6">{currency(Number(financialSummary.total_with_purchases))}</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between"><Button size="small" onClick={() => navigate('incomes')}>Ingresos registrados</Button><Typography fontWeight={700}>{currency(Number(financialSummary.income))}</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Saldo estimado</Typography><Typography variant="h6" color={financialSummary.balance !== null && Number(financialSummary.balance) < 0 ? 'error.main' : 'primary.main'}>{financialSummary.balance === null ? 'Sin ingresos registrados' : currency(Number(financialSummary.balance))}</Typography></Stack>
+                <Typography variant="caption" color="text.secondary">Los compromisos recurrentes son estimaciones actuales, no un historial de pagos. El saldo usa los ingresos y compras del mes seleccionado.</Typography>
               </Stack>}
             </Panel>
             <Box className="two-column">
@@ -1252,8 +1269,8 @@ export default function App() {
                 action={<Button size="small" onClick={() => navigate('monthly-needs')}>Entrar</Button>}>
                 <Typography variant="body2" color="text.secondary">Registra tus necesidades recurrentes, organiza sus categorías y decide cuáles compartir con tu pareja.</Typography>
               </Panel>
-              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Chip size="small" label="Próximamente" />}>
-                <Typography variant="body2" color="text.secondary">Más adelante podrás decidir qué información financiera mostrar a tu pareja.</Typography>
+              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Button size="small" onClick={() => navigate('incomes')}>Entrar</Button>}>
+                <Typography variant="body2" color="text.secondary">Registra salarios e ingresos netos por mes y decide cuáles compartir.</Typography>
               </Panel>
               <Panel title="Compras e inversiones" icon={<ShoppingCartRounded />} action={<Chip size="small" label="Próximamente" />}>
                 <Typography variant="body2" color="text.secondary">Planeación de compras, ahorro y otras metas económicas.</Typography>
@@ -1382,7 +1399,7 @@ export default function App() {
                 <Button variant="outlined" color="inherit" size="small" startIcon={<ShoppingCartRounded />}
                   onClick={() => openShortcut('shopping')} sx={{ borderColor: 'divider', borderRadius: 2, color: 'text.secondary' }}>Súper y compras del hogar</Button>
               </Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>La gestión de compras del hogar estará disponible próximamente.</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Consulta las compras del hogar por mes.</Typography>
             </Box>
           </Box>}
           {page === 'profile' && <Box sx={{ maxWidth: 660, mx: 'auto' }}>
