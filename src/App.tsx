@@ -19,7 +19,7 @@ import { buildTheme } from './theme/mui';
 import { brand, themes, pillarThemes, type Pillar, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
-import { MonthlyLedger, currentMonth } from './MonthlyLedger';
+import { MonthlyLedger, currentMonth, frequencies } from './MonthlyLedger';
 
 type Page = 'home' | 'tasks' | 'budget' | 'home-finances' | 'home-purchases' | 'incomes' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
@@ -27,9 +27,9 @@ type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean }
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
 type NeedCategory = string;
 type CustomNeedCategory = { value: string; name: string };
-type Commitment = { id: number; origin: string; name: string; category: string; cost: string; frequency: string; due_date: string | null; shared: boolean; owner_share: number; paid: boolean; owner_name: string; monthly_cost: string };
-type FinancialSummary = { monthly_by_origin: Record<'home' | 'fire' | 'prosperity', string>; total_monthly: string; household_purchases: string; total_with_purchases: string; income: string; income_count: number; balance: string | null; month: string };
-const emptyCommitment = { name: '', category: 'Vivienda', cost: '', frequency: 'monthly', due_date: '', shared: false, owner_share: 100, paid: false };
+type Commitment = { end_date: string | null; id: number; origin: string; name: string; category: string; cost: string; frequency: string; due_date: string | null; shared: boolean; owner_share: number; paid: boolean; owner_name: string; monthly_cost: string };
+type FinancialSummary = { real_by_origin: Record<'home' | 'fire' | 'prosperity', string>; expected_income: string; projected_balance: string; real_expenses: string; planned_purchases: string; monthly_by_origin: Record<'home' | 'fire' | 'prosperity', string>; total_monthly: string; household_purchases: string; total_with_purchases: string; income: string; income_count: number; balance: string | null; month: string };
+const emptyCommitment = { name: '', category: 'Vivienda', cost: '', frequency: 'monthly', due_date: '', end_date: '', shared: false, owner_share: 100, paid: false };
 type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string; shortcut_ids?: ShortcutId[] };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
@@ -172,6 +172,7 @@ export default function App() {
   const [commitmentDraft, setCommitmentDraft] = useState(emptyCommitment);
   const [commitmentId, setCommitmentId] = useState<number | null>(null);
   const [financeMonth, setFinanceMonth] = useState(currentMonth);
+  const [balanceMode, setBalanceMode] = useState<'projected' | 'real'>('projected');
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
   const [financeError, setFinanceError] = useState('');
   const [financeBusy, setFinanceBusy] = useState(false);
@@ -409,7 +410,7 @@ export default function App() {
     try {
       const saved = await api<Commitment>(commitmentId ? `/finances/commitments/${commitmentId}/` : '/finances/commitments/', {
         method: commitmentId ? 'PATCH' : 'POST',
-        body: JSON.stringify({ ...commitmentDraft, origin: 'home', due_date: commitmentDraft.due_date || null }),
+        body: JSON.stringify({ ...commitmentDraft, origin: 'home', due_date: commitmentDraft.due_date || null, end_date: commitmentDraft.end_date || null }),
       }, accessToken);
       setCommitments(previous => [saved, ...previous.filter(c => c.id !== saved.id)]);
       setCommitmentDraft(emptyCommitment); setCommitmentId(null);
@@ -1168,10 +1169,11 @@ export default function App() {
                 </TextField>
                 <TextField required type="number" label="Importe por periodo (MXN)" value={commitmentDraft.cost} inputProps={{ min: 0, step: '0.01' }} onChange={e => setCommitmentDraft(d => ({ ...d, cost: e.target.value }))} />
                 <TextField select label="Periodicidad" value={commitmentDraft.frequency} onChange={e => setCommitmentDraft(d => ({ ...d, frequency: e.target.value }))}>
-                  <MenuItem value="monthly">Mensual</MenuItem><MenuItem value="bimonthly">Bimestral</MenuItem><MenuItem value="annual">Anual</MenuItem>
+                  {frequencies.map(f => <MenuItem key={f.value} value={f.value}>{f.label}</MenuItem>)}
                 </TextField>
-                <TextField type="date" label="Vencimiento" InputLabelProps={{ shrink: true }} value={commitmentDraft.due_date} onChange={e => setCommitmentDraft(d => ({ ...d, due_date: e.target.value }))} />
-                <FormControlLabel control={<Checkbox checked={commitmentDraft.paid} onChange={e => setCommitmentDraft(d => ({ ...d, paid: e.target.checked }))} />} label="Pagado" />
+                <TextField required type="date" label="Primer vencimiento" InputLabelProps={{ shrink: true }} value={commitmentDraft.due_date} onChange={e => setCommitmentDraft(d => ({ ...d, due_date: e.target.value }))} />
+                {commitmentDraft.frequency !== "once" && <TextField type="date" label="Finalización (opcional)" InputLabelProps={{ shrink: true }} value={commitmentDraft.end_date} onChange={e => setCommitmentDraft(d => ({ ...d, end_date: e.target.value }))} />}
+                <FormControlLabel control={<Checkbox checked={commitmentDraft.paid} onChange={e => setCommitmentDraft(d => ({ ...d, paid: e.target.checked }))} />} label="Primer vencimiento pagado" />
                 <FormControlLabel control={<Checkbox checked={commitmentDraft.shared} disabled={!paired} onChange={e => setCommitmentDraft(d => ({ ...d, shared: e.target.checked, owner_share: 100 }))} />} label="Compartir con mi pareja" />
                 {commitmentDraft.shared && <TextField type="number" label="Mi porcentaje (%)" value={commitmentDraft.owner_share} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => setCommitmentDraft(d => ({ ...d, owner_share: Number(e.target.value) }))} helperText="El porcentaje restante corresponde a tu pareja." />}
                 <Stack direction="row" gap={1}>
@@ -1184,11 +1186,11 @@ export default function App() {
                 {!commitments.length && !financeBusy && <Typography color="text.secondary">Todavía no hay gastos del hogar registrados en este espacio.</Typography>}
                 {commitments.map(c => <Card key={c.id} variant="outlined"><CardContent>
                   <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }}>
-                    <Box sx={{ flex: 1 }}><Typography fontWeight={700}>{c.name}</Typography><Typography variant="body2" color="text.secondary">{c.category} · {c.frequency === 'monthly' ? 'Mensual' : c.frequency === 'bimonthly' ? 'Bimestral' : 'Anual'} · {c.due_date || 'Sin vencimiento'}</Typography>
+                    <Box sx={{ flex: 1 }}><Typography fontWeight={700}>{c.name}</Typography><Typography variant="body2" color="text.secondary">{c.category} · {frequencies.find(f => f.value === c.frequency)?.label || c.frequency} · {c.due_date || 'Sin vencimiento'}</Typography>
                     <Typography variant="caption" color="text.secondary">{scope === 'shared' ? c.owner_name + ' · ' : ''}{c.shared ? 'Compartido · titular ' + c.owner_share + '%' : 'Privado'}</Typography></Box>
                     <Chip size="small" label={c.paid ? 'Pagado' : 'Pendiente'} color={c.paid ? 'success' : 'default'} />
                     <Box><Typography fontWeight={700}>{currency(Number(c.cost))}</Typography><Typography variant="caption">{currency(Number(c.monthly_cost))}/mes equivalente</Typography></Box>
-                    {scope === 'personal' && <Stack direction="row"><Button size="small" onClick={() => { setCommitmentId(c.id); setCommitmentDraft({ name: c.name, category: c.category, cost: c.cost, frequency: c.frequency, due_date: c.due_date || '', shared: c.shared, owner_share: c.owner_share, paid: c.paid }); }}>Editar</Button><Button size="small" color="error" disabled={financeBusy} onClick={() => void removeCommitment(c.id)}>Eliminar</Button></Stack>}
+                    {scope === 'personal' && <Stack direction="row"><Button size="small" onClick={() => { setCommitmentId(c.id); setCommitmentDraft({ name: c.name, category: c.category, cost: c.cost, frequency: c.frequency, due_date: c.due_date || '', end_date: c.end_date || '', shared: c.shared, owner_share: c.owner_share, paid: c.paid }); }}>Editar</Button><Button size="small" color="error" disabled={financeBusy} onClick={() => void removeCommitment(c.id)}>Eliminar</Button></Stack>}
                   </Stack>
                 </CardContent></Card>)}
               </Stack>
@@ -1233,15 +1235,16 @@ export default function App() {
               {financeBusy && <LinearProgress />}
               {demo && <Typography color="text.secondary">Inicia sesión para consultar tus importes.</Typography>}
               {financialSummary && <Stack spacing={1.5}>
+                <Tabs value={balanceMode} onChange={(_, v) => setBalanceMode(v)}><Tab value="projected" label="Proyectado" /><Tab value="real" label="Real" /></Tabs>
                 {([{ key: 'home', label: 'Hogar', target: 'home-finances', pillar: 'home' }, { key: 'fire', label: 'Fuego sagrado', target: 'fire', pillar: 'sacredFire' }, { key: 'prosperity', label: 'Prosperidad', target: 'monthly-needs', pillar: 'prosperity' }] as const).map(item => <Stack key={item.key} direction="row" alignItems="center" justifyContent="space-between">
                   <Button size="small" onClick={() => navigate(item.target)} sx={{ color: pillarColors[item.pillar].main }}>{item.label}</Button>
-                  <Typography fontWeight={700}>{currency(Number(financialSummary.monthly_by_origin[item.key]))}</Typography>
+                  <Typography fontWeight={700}>{currency(Number((balanceMode === 'real' ? financialSummary.real_by_origin : financialSummary.monthly_by_origin)[item.key]))}</Typography>
                 </Stack>)}
-                <Stack direction="row" justifyContent="space-between" alignItems="center"><Button size="small" onClick={() => navigate('home-purchases')} sx={{ color: pillarColors.home.main }}>Compras del hogar realizadas</Button><Typography fontWeight={700}>{currency(Number(financialSummary.household_purchases))}</Typography></Stack>
-                <Divider /><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Compromisos y compras</Typography><Typography variant="h6">{currency(Number(financialSummary.total_with_purchases))}</Typography></Stack>
-                <Stack direction="row" justifyContent="space-between"><Button size="small" onClick={() => navigate('incomes')}>Ingresos registrados</Button><Typography fontWeight={700}>{currency(Number(financialSummary.income))}</Typography></Stack>
-                <Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Saldo estimado</Typography><Typography variant="h6" color={financialSummary.balance !== null && Number(financialSummary.balance) < 0 ? 'error.main' : 'primary.main'}>{financialSummary.balance === null ? 'Sin ingresos registrados' : currency(Number(financialSummary.balance))}</Typography></Stack>
-                <Typography variant="caption" color="text.secondary">Los compromisos recurrentes son estimaciones actuales, no un historial de pagos. El saldo usa los ingresos y compras del mes seleccionado.</Typography>
+                <Stack direction="row" justifyContent="space-between" alignItems="center"><Button size="small" onClick={() => navigate('home-purchases')} sx={{ color: pillarColors.home.main }}>Compras del hogar</Button><Typography fontWeight={700}>{currency(Number(balanceMode === 'real' ? financialSummary.household_purchases : financialSummary.planned_purchases))}</Typography></Stack>
+                <Divider /><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Compromisos y compras</Typography><Typography variant="h6">{currency(Number(balanceMode === 'real' ? financialSummary.real_expenses : financialSummary.total_with_purchases))}</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between"><Button size="small" onClick={() => navigate('incomes')}>{balanceMode === 'real' ? 'Ingresos recibidos' : 'Ingresos esperados'}</Button><Typography fontWeight={700}>{currency(Number(balanceMode === 'real' ? financialSummary.income : financialSummary.expected_income))}</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Saldo estimado</Typography><Typography variant="h6" color={financialSummary.balance !== null && Number(financialSummary.balance) < 0 ? 'error.main' : 'primary.main'}>{balanceMode === 'projected' ? currency(Number(financialSummary.projected_balance)) : financialSummary.balance === null ? 'Sin ingresos confirmados' : currency(Number(financialSummary.balance))}</Typography></Stack>
+                <Typography variant="caption" color="text.secondary">El balance real solo incluye movimientos confirmados. Las necesidades mensuales existentes y los compromisos sin fecha se incluyen únicamente como previsiones.</Typography>
               </Stack>}
             </Panel>
             <Box className="two-column">
