@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import {
   Alert, AppBar, Autocomplete, Avatar, Box, Button, Card, CardContent, Checkbox, FormControlLabel, Chip, Container, Dialog, DialogTitle, DialogContent, DialogActions,
   CssBaseline, Divider, IconButton, LinearProgress, Menu, MenuItem, Stack,
@@ -11,7 +11,9 @@ import {
   ChecklistRounded, ContentCopyRounded, DarkModeRounded, FavoriteRounded,
   HomeRounded, LocalFireDepartmentRounded, LightModeRounded, LockOutlineRounded, LogoutRounded,
   NotificationsNoneRounded, PersonOutlineRounded, PushPinRounded,
-  SettingsRounded, ShoppingCartRounded, WalletRounded
+  SettingsRounded, ShoppingCartRounded, WalletRounded,
+  ArrowDownwardRounded, ArrowUpwardRounded, HealthAndSafetyRounded, RestaurantRounded,
+  DirectionsCarRounded, MovieRounded, SchoolRounded, WifiRounded, SavingsRounded, CategoryRounded
 } from '@mui/icons-material';
 import { buildTheme } from './theme/mui';
 import { brand, themes, type ThemeName } from './theme/tokens';
@@ -21,11 +23,39 @@ import './styles.css';
 type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'finances' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
-type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string };
+type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
+type NeedCategory = 'health' | 'food' | 'home' | 'transport' | 'entertainment' | 'education' | 'services' | 'savings' | 'other';
+type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string; shortcut_ids?: ShortcutId[] };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
-type MonthlyNeed = { id: number; name: string; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
+type MonthlyNeed = { id: number; name: string; category: NeedCategory; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
 const needPriorities = [{ value: 'essential', label: 'Esencial' }, { value: 'high', label: 'Alta' }, { value: 'medium', label: 'Media' }, { value: 'low', label: 'Baja' }] as const;
+const needCategories: { value: NeedCategory; label: string; icon: ReactElement }[] = [
+  { value: 'health', label: 'Salud', icon: <HealthAndSafetyRounded /> },
+  { value: 'food', label: 'Alimentación', icon: <RestaurantRounded /> },
+  { value: 'home', label: 'Hogar', icon: <HomeRounded /> },
+  { value: 'transport', label: 'Transporte', icon: <DirectionsCarRounded /> },
+  { value: 'entertainment', label: 'Entretenimiento', icon: <MovieRounded /> },
+  { value: 'education', label: 'Educación', icon: <SchoolRounded /> },
+  { value: 'services', label: 'Servicios', icon: <WifiRounded /> },
+  { value: 'savings', label: 'Ahorro y metas', icon: <SavingsRounded /> },
+  { value: 'other', label: 'Otros', icon: <CategoryRounded /> },
+];
+type ShortcutDefinition = { id: ShortcutId; label: string; page: Page; sectionId?: string; icon: ReactElement };
+const shortcutCatalog: ShortcutDefinition[] = [
+  { id: 'finances', label: 'Finanzas', page: 'finances', icon: <WalletRounded /> },
+  { id: 'projects', label: 'Proyectos', page: 'fire', sectionId: 'fire-projects', icon: <FavoriteRounded /> },
+  { id: 'cleaning', label: 'Limpieza', page: 'budget', sectionId: 'home-cleaning', icon: <ChecklistRounded /> },
+  { id: 'agreements', label: 'Acuerdos', page: 'budget', sectionId: 'home-agreements', icon: <FavoriteRounded /> },
+  { id: 'shopping', label: 'Compras del hogar', page: 'budget', sectionId: 'home-shopping', icon: <ShoppingCartRounded /> },
+  { id: 'tasks', label: 'Actividades y tareas', page: 'tasks', icon: <CalendarMonthRounded /> },
+];
+const defaultShortcutIds: ShortcutId[] = ['finances', 'cleaning', 'agreements'];
+function normalizedShortcutIds(value: unknown): ShortcutId[] {
+  if (!Array.isArray(value)) return [...defaultShortcutIds];
+  const ids = value.filter((id): id is ShortcutId => typeof id === 'string' && shortcutCatalog.some(item => item.id === id));
+  return Array.from(new Set(ids)).slice(0, 4);
+}
 type CoupleData = { couple: { id: number; members: number[]; display_name: string; image_url: string } | null };
 const initialTasks: Task[] = [
   { name: 'Lavar la ropa', priority: 'Alta', done: false },
@@ -61,10 +91,10 @@ function BrandLogo({ themeName, onClick, large = false }: {
   );
 }
 
-function Panel({ title, action, children, icon }: {
-  title: string; action?: ReactNode; children: ReactNode; icon?: ReactNode
+function Panel({ title, action, children, icon, sectionId }: {
+  title: string; action?: ReactNode; children: ReactNode; icon?: ReactNode; sectionId?: string
 }) {
-  return <Card className="app-panel">
+  return <Card id={sectionId} className="app-panel">
     <CardContent sx={{ p: { xs: 2, sm: 2.5 }, '&:last-child': { pb: { xs: 2, sm: 2.5 } } }}>
       <Stack direction="row" alignItems="center" spacing={1} mb={2}>
         {icon && <Box sx={{ color: 'primary.main', display: 'flex' }}>{icon}</Box>}
@@ -81,6 +111,12 @@ export default function App() {
   const theme = useMemo(() => buildTheme(themeName), [themeName]);
   const desktop = useMediaQuery(theme.breakpoints.up('md'));
   const [page, setPage] = useState<Page>('home');
+  const [shortcutTarget, setShortcutTarget] = useState('');
+  const [shortcutIds, setShortcutIds] = useState<ShortcutId[]>([...defaultShortcutIds]);
+  const [shortcutDraft, setShortcutDraft] = useState<ShortcutId[]>([...defaultShortcutIds]);
+  const [shortcutDialogOpen, setShortcutDialogOpen] = useState(false);
+  const [shortcutsSaving, setShortcutsSaving] = useState(false);
+  const [shortcutsError, setShortcutsError] = useState('');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [pendingInvite] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('invite') || '');
   const [showAuth, setShowAuth] = useState(Boolean(new URLSearchParams(window.location.hash.slice(1)).get('invite')));
@@ -127,6 +163,7 @@ export default function App() {
   const [needName, setNeedName] = useState('');
   const [needCost, setNeedCost] = useState('');
   const [needPriority, setNeedPriority] = useState<MonthlyNeed['priority']>('medium');
+  const [needCategory, setNeedCategory] = useState<NeedCategory>('other');
   const [needShared, setNeedShared] = useState(false);
   const [editingNeed, setEditingNeed] = useState<number | null>(null);
   const [needsLoading, setNeedsLoading] = useState(false);
@@ -162,6 +199,7 @@ export default function App() {
         setPersonalCoverDraft(profile.hero_image_url || '');
         setAppName(profile.app_name || '');
         setNameDraft(profile.app_name || '');
+        setShortcutIds(normalizedShortcutIds(profile.shortcut_ids));
         setPaired(Boolean(relation.couple));
         setSharedName(relation.couple?.display_name || '');
         setSharedNameDraft(relation.couple?.display_name || '');
@@ -183,7 +221,76 @@ export default function App() {
   }, [pendingInvite]);
 
   function navigate(next: Page) {
-    setMessage(''); setPage(next);
+    setMessage(''); setShortcutTarget(''); setPage(next);
+  }
+
+  function openShortcut(id: ShortcutId) {
+    const shortcut = shortcutCatalog.find(item => item.id === id);
+    if (!shortcut) return;
+    setMessage('');
+    setPage(shortcut.page);
+    setShortcutTarget(shortcut.sectionId || '');
+  }
+
+  useEffect(() => {
+    if (!shortcutTarget) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(shortcutTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setShortcutTarget('');
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [page, shortcutTarget]);
+
+  function openShortcutEditor() {
+    setShortcutDraft([...shortcutIds]);
+    setShortcutsError('');
+    setShortcutDialogOpen(true);
+  }
+
+  function toggleShortcutDraft(id: ShortcutId) {
+    setShortcutDraft(previous => previous.includes(id)
+      ? previous.filter(existing => existing !== id)
+      : previous.length < 4 ? [...previous, id] : previous);
+  }
+
+  function reorderShortcut(id: ShortcutId, delta: number) {
+    setShortcutDraft(previous => {
+      const from = previous.indexOf(id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= previous.length) return previous;
+      const reordered = [...previous];
+      [reordered[from], reordered[to]] = [reordered[to], reordered[from]];
+      return reordered;
+    });
+  }
+
+  async function saveShortcuts() {
+    if (demo) {
+      setShortcutIds([...shortcutDraft]);
+      setShortcutDialogOpen(false);
+      return;
+    }
+    if (!accessToken) return;
+    setShortcutsSaving(true);
+    setShortcutsError('');
+    try {
+      const profile = await api<UserProfile>('/auth/me/', {
+        method: 'PATCH', body: JSON.stringify({ shortcut_ids: shortcutDraft }),
+      }, accessToken);
+      setShortcutIds(normalizedShortcutIds(profile.shortcut_ids));
+      setShortcutDialogOpen(false);
+    } catch (error) {
+      setShortcutsError(error instanceof Error ? error.message : 'No se pudieron guardar los accesos directos.');
+    } finally { setShortcutsSaving(false); }
+  }
+
+  function shortcutChip(id: ShortcutId) {
+    const shortcut = shortcutCatalog.find(item => item.id === id);
+    if (!shortcut) return null;
+    return <Chip key={id} clickable icon={shortcut.icon} label={shortcut.label} onClick={() => openShortcut(id)}
+      aria-label={'Ir a ' + shortcut.label} sx={{ height: 38, borderRadius: 2.5, fontSize: '0.83rem', fontWeight: 500,
+        border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper',
+        '& .MuiChip-icon': { ml: 1, color: 'primary.main' }, '&:hover': { bgcolor: 'action.hover' } }} />;
   }
 
   useEffect(() => {
@@ -211,7 +318,7 @@ export default function App() {
   }, [accessToken, demo, paired, scope, page]);
 
   function resetNeedForm() {
-    setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedShared(false); setEditingNeed(null);
+    setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedCategory('other'); setNeedShared(false); setEditingNeed(null);
   }
 
   async function saveNeed() {
@@ -227,7 +334,7 @@ export default function App() {
         ? `/finances/monthly-needs/${editingNeed}/` : '/finances/monthly-needs/', {
         method: editingNeed ? 'PATCH' : 'POST',
         body: JSON.stringify({ name: needName.trim(), cost: numeric.toFixed(2),
-          priority: needPriority, shared: needShared }),
+          category: needCategory, priority: needPriority, shared: needShared }),
       }, accessToken);
       setMonthlyNeeds(old => editingNeed
         ? old.map(need => need.id === editingNeed ? value : need)
@@ -314,6 +421,7 @@ export default function App() {
         setPersonName(profile.first_name?.trim() || profile.username || profile.email.split('@')[0]);
         setAppName(profile.app_name || '');
         setNameDraft(profile.app_name || '');
+        setShortcutIds(normalizedShortcutIds(profile.shortcut_ids));
         const relation = await api<CoupleData>('/couples/me/', {}, result.access);
         const linked = Boolean(relation.couple);
         setPaired(linked); setSharedName(relation.couple?.display_name || '');
@@ -491,6 +599,7 @@ export default function App() {
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
     setMonthlyNeeds([]); resetNeedForm(); setPersonalCoverUrl(''); setPersonalCoverDraft('');
+    setShortcutIds([...defaultShortcutIds]); setShortcutDraft([...defaultShortcutIds]); setShortcutDialogOpen(false); setShortcutTarget('');
     setAccountMenuAnchor(null); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
 
@@ -768,6 +877,35 @@ export default function App() {
                   </Typography>
                 </Box>
               </Box>
+              <Box className="shortcut-strip" aria-label="Mis accesos directos">
+                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.2, gap: 1 }}>
+                  <Typography variant="subtitle1" fontWeight={700}>Mis accesos directos</Typography>
+                  <Typography variant="caption" color="text.secondary">Personaliza tus favoritos</Typography>
+                </Stack>
+                <Box className="shortcut-grid">
+                  {shortcutIds.map((id, index) => {
+                    const shortcut = shortcutCatalog.find(item => item.id === id);
+                    if (!shortcut) return null;
+                    return <Button key={id} color="inherit" variant="outlined"
+                      className={'shortcut-tile' + (index >= 2 ? ' shortcut-extra-mobile' : '')}
+                      onClick={() => openShortcut(id)} aria-label={'Ir a ' + shortcut.label}
+                      sx={{ borderColor: 'divider', bgcolor: 'background.paper', textTransform: 'none',
+                        borderRadius: 2.5, color: 'text.primary', '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' } }}>
+                      <Box sx={{ color: 'primary.main', display: 'flex' }}>{shortcut.icon}</Box>
+                      <Typography variant="body2" fontWeight={600} textAlign="center" sx={{ fontSize: '0.8rem', lineHeight: 1.2 }}>
+                        {shortcut.label}
+                      </Typography>
+                    </Button>;
+                  })}
+                  <Button color="inherit" variant="outlined" className="shortcut-tile shortcut-add"
+                    onClick={openShortcutEditor} aria-label="Añadir o editar accesos directos"
+                    sx={{ borderColor: 'divider', color: 'text.secondary', textTransform: 'none',
+                      borderRadius: 2.5, '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' } }}>
+                    <AddRounded sx={{ fontSize: 27 }} />
+                    <Typography variant="body2" fontWeight={600}>Editar</Typography>
+                  </Button>
+                </Box>
+              </Box>
               <Panel title="Borrador de pensamientos" icon={<PushPinRounded />}>
                 <Box className="notes-grid">
                   {demo ? <Typography color="text.secondary">Anota ideas para conversar, negociar o compartir en algún momento.</Typography> :
@@ -818,15 +956,14 @@ export default function App() {
                 action={<Button size="small" onClick={() => navigate('budget')}>Entrar</Button>}>
                 <Typography color="text.secondary" variant="body2">Organicen juntos la limpieza, los acuerdos y las normas para convivir.</Typography>
                 <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
-                  <Chip label="Limpieza" size="small" /><Chip label="Acuerdos" size="small" />
-                  <Chip label="Compras del hogar" size="small" />
+                  {shortcutChip('cleaning')}{shortcutChip('agreements')}{shortcutChip('shopping')}
                 </Stack>
               </Panel>
               <Panel title="Nuestro fuego sagrado" icon={<LocalFireDepartmentRounded />}
                 action={<Button size="small" onClick={() => navigate('fire')}>Explorar</Button>}>
                 <Typography variant="body2" color="text.secondary">Metas, proyectos y decisiones que alimentan nuestra vida juntos.</Typography>
-                <Stack direction="row" gap={1} sx={{ mt: 2 }}>
-                  <Chip label="Finanzas" size="small" /><Chip label="Proyectos" size="small" />
+                <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
+                  {shortcutChip('finances')}{shortcutChip('projects')}
                 </Stack>
               </Panel>
             </Box>
@@ -855,19 +992,19 @@ export default function App() {
             <Typography variant="h4" gutterBottom>Nuestro hogar</Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>Pequeños acuerdos para construir una convivencia más sencilla.</Typography>
             <Box className="two-column">
-              <Panel title="Limpieza y responsabilidades" icon={<ChecklistRounded />}
+              <Panel title="Limpieza y responsabilidades" icon={<ChecklistRounded />} sectionId="home-cleaning"
                 action={<Chip size="small" label="Próximamente" />}>
                 <Typography color="text.secondary" variant="body2">
                   Aquí organizaremos las tareas de limpieza, turnos y responsabilidades del hogar.
                 </Typography>
               </Panel>
-              <Panel title="Normas y acuerdos de convivencia" icon={<FavoriteRounded />}
+              <Panel title="Normas y acuerdos de convivencia" icon={<FavoriteRounded />} sectionId="home-agreements"
                 action={<Chip size="small" label="Próximamente" />}>
                 <Typography color="text.secondary" variant="body2">
                   Un espacio para definir juntos acuerdos, límites y reglas que faciliten la convivencia.
                 </Typography>
               </Panel>
-              <Panel title="Compras y gastos del hogar" icon={<ShoppingCartRounded />}
+              <Panel title="Compras y gastos del hogar" icon={<ShoppingCartRounded />} sectionId="home-shopping"
                 action={<Chip size="small" label="Próximamente" />}>
                 <Typography color="text.secondary" variant="body2">
                   Aquí reuniremos las compras necesarias para la casa. Los importes podrán consultarse después en Finanzas, con privacidad configurable.
@@ -895,7 +1032,7 @@ export default function App() {
                 </Typography>
                 <Chip label="Necesidades mensuales disponibles" color="success" size="small" sx={{ mt: 2 }} />
               </Panel>
-              <Panel title="Metas y proyectos" icon={<FavoriteRounded />} action={<Chip label="Próximamente" size="small" />}>
+              <Panel title="Metas y proyectos" icon={<FavoriteRounded />} sectionId="fire-projects" action={<Chip label="Próximamente" size="small" />}>
                 <Typography variant="body2" color="text.secondary">Sueños, planes y objetivos que quieran construir juntos.</Typography>
               </Panel>
             </Box>
@@ -917,9 +1054,18 @@ export default function App() {
               {needsLoading && <LinearProgress sx={{ mb: 2 }} />}
               {demo ? <Alert severity="info">Inicia sesión para crear y guardar necesidades reales.</Alert> : <>
                 {scope === 'personal' && <Box component="form" onSubmit={event => { event.preventDefault(); void saveNeed(); }}
-                  sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr' }, gap: 2, mb: 3 }}>
+                  sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 2, mb: 3 }}>
                   <TextField required label="Nombre de la necesidad" value={needName}
                     inputProps={{ maxLength: 150 }} onChange={e => setNeedName(e.target.value)} />
+                  <TextField select required label="Categoría" value={needCategory}
+                    onChange={e => setNeedCategory(e.target.value as NeedCategory)}>
+                    {needCategories.map(category => <MenuItem key={category.value} value={category.value}>
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <Box sx={{ display: 'flex', color: 'primary.main' }}>{category.icon}</Box>
+                        <span>{category.label}</span>
+                      </Stack>
+                    </MenuItem>)}
+                  </TextField>
                   <TextField required type="number" label="Costo mensual (MXN)" value={needCost}
                     inputProps={{ min: 0, step: '0.01' }} onChange={e => setNeedCost(e.target.value)} />
                   <TextField select label="Prioridad" value={needPriority}
@@ -939,29 +1085,68 @@ export default function App() {
                 {monthlyNeeds.length === 0 ? <Typography color="text.secondary">
                   {scope === 'personal' ? 'Aún no tienes necesidades registradas.' :
                     'No hay necesidades compartidas todavía.'}
-                </Typography> : <Stack spacing={1}>
-                  {monthlyNeeds.map(need => <Card key={need.id} variant="outlined" sx={{ boxShadow: 'none' }}>
-                    <CardContent sx={{ '&:last-child': { pb: 2 } }}>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography fontWeight={700}>{need.name}</Typography>
-                          <Typography variant="caption" color="text.secondary">{scope === 'shared' ? `Registrada por ${need.owner_name}` : need.shared ? 'Visible para tu pareja' : 'Solo tú puedes verla'}</Typography>
+                </Typography> : <Stack spacing={2.25}>
+                  {needCategories.map(category => {
+                    const categoryNeeds = monthlyNeeds.filter(need =>
+                      (needCategories.some(entry => entry.value === need.category) ? need.category : 'other') === category.value);
+                    if (!categoryNeeds.length) return null;
+                    const subtotal = categoryNeeds.reduce((sum, need) => sum + Number(need.cost), 0);
+                    return <Box key={category.value} className="needs-category-group"
+                      sx={{ bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider',
+                        borderRadius: 3, p: { xs: 1.4, sm: 2 } }}>
+                      <Stack direction="row" alignItems="center" gap={1.25} sx={{ mb: 1.7 }}>
+                        <Box sx={{ display: 'flex', bgcolor: 'background.paper', color: 'primary.main',
+                          p: 1, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                          {category.icon}
                         </Box>
-                        <Chip size="small" variant="outlined" label={needPriorities.find(p => p.value === need.priority)?.label || need.priority} />
-                        <Typography fontWeight={700}>{currency(Number(need.cost))}/mes</Typography>
-                        {scope === 'personal' && <Stack direction="row" gap={0.5}>
-                          <Button size="small" onClick={() => {
-                            setEditingNeed(need.id); setNeedName(need.name); setNeedCost(need.cost);
-                            setNeedPriority(need.priority); setNeedShared(need.shared);
-                          }}>Editar</Button>
-                          <Button size="small" color="error" onClick={() => void removeNeed(need.id)}>Eliminar</Button>
-                        </Stack>}
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography fontWeight={700} sx={{ fontSize: { xs: '1rem', sm: '1.1rem' } }}>
+                            {category.label}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {categoryNeeds.length} {categoryNeeds.length === 1 ? 'necesidad' : 'necesidades'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography fontWeight={700} sx={{ whiteSpace: 'nowrap' }}>{currency(subtotal)}</Typography>
+                          <Typography variant="caption" color="text.secondary">por mes</Typography>
+                        </Box>
                       </Stack>
-                    </CardContent>
-                  </Card>)}
-                  <Stack direction="row" justifyContent="space-between" sx={{ pt: 2 }}>
-                    <Typography fontWeight={600}>Total mensual {scope === 'shared' ? 'compartido' : 'individual'}</Typography>
-                    <Typography fontWeight={700}>{currency(monthlyNeeds.reduce((sum, need) => sum + Number(need.cost), 0))}</Typography>
+                      <Stack spacing={1}>
+                        {categoryNeeds.map(need => <Card key={need.id} variant="outlined"
+                          sx={{ boxShadow: 'none', bgcolor: 'background.paper', borderRadius: 2 }}>
+                          <CardContent sx={{ p: { xs: 1.5, sm: 2 }, '&:last-child': { pb: { xs: 1.5, sm: 2 } } }}>
+                            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.2} alignItems={{ sm: 'center' }}>
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography fontWeight={700}>{need.name}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {scope === 'shared' ? 'Registrada por ' + need.owner_name : need.shared ? 'Visible para tu pareja' : 'Solo tú puedes verla'}
+                                </Typography>
+                              </Box>
+                              <Chip size="small" variant="outlined"
+                                label={needPriorities.find(priority => priority.value === need.priority)?.label || need.priority} />
+                              <Typography fontWeight={700} sx={{ whiteSpace: 'nowrap' }}>
+                                {currency(Number(need.cost))}/mes
+                              </Typography>
+                              {scope === 'personal' && <Stack direction="row" gap={0.5}>
+                                <Button size="small" onClick={() => {
+                                  setEditingNeed(need.id); setNeedName(need.name); setNeedCost(need.cost);
+                                  setNeedPriority(need.priority); setNeedCategory(need.category || 'other'); setNeedShared(need.shared);
+                                }}>Editar</Button>
+                                <Button size="small" color="error" onClick={() => void removeNeed(need.id)}>Eliminar</Button>
+                              </Stack>}
+                            </Stack>
+                          </CardContent>
+                        </Card>)}
+                      </Stack>
+                    </Box>;
+                  })}
+                  <Stack direction="row" justifyContent="space-between" alignItems="center"
+                    sx={{ py: 2, px: { xs: 1, sm: 2 }, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Typography fontWeight={700}>Total mensual {scope === 'shared' ? 'compartido' : 'individual'}</Typography>
+                    <Typography fontWeight={800} variant="h6">
+                      {currency(monthlyNeeds.reduce((sum, need) => sum + Number(need.cost), 0))}
+                    </Typography>
                   </Stack>
                 </Stack>}
               </>}
@@ -1050,6 +1235,47 @@ export default function App() {
           <DialogActions>
             <Button onClick={() => setCoverDialogOpen(false)}>Cancelar</Button>
             <Button variant="contained" disabled={loading || demo} onClick={() => void saveCoverPhoto()}>Guardar portada</Button>
+          </DialogActions>
+        </Dialog>
+        <Dialog open={shortcutDialogOpen} onClose={() => { if (!shortcutsSaving) setShortcutDialogOpen(false); }} fullWidth maxWidth="sm">
+          <DialogTitle>Personalizar accesos directos</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Selecciona hasta cuatro secciones. Puedes cambiar el orden con las flechas.
+              En el celular se muestran tus dos primeras opciones y el botón para editar.
+            </Typography>
+            {shortcutsError && <Alert severity="error" sx={{ mb: 2 }}>{shortcutsError}</Alert>}
+            <Stack spacing={1}>
+              {shortcutCatalog.map(shortcut => {
+                const selected = shortcutDraft.includes(shortcut.id);
+                const position = shortcutDraft.indexOf(shortcut.id);
+                return <Box key={shortcut.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1,
+                  border: '1px solid', borderColor: selected ? 'primary.main' : 'divider', borderRadius: 2 }}>
+                  <Button size="small" color={selected ? 'primary' : 'inherit'} variant={selected ? 'contained' : 'text'}
+                    disabled={!selected && shortcutDraft.length >= 4}
+                    onClick={() => toggleShortcutDraft(shortcut.id)}
+                    startIcon={selected ? <CheckCircleRounded /> : <AddRounded />}
+                    sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', textTransform: 'none' }}>
+                    <Box sx={{ display: 'flex', mr: 0.8 }}>{shortcut.icon}</Box>
+                    <Typography variant="body2" fontWeight={600} textAlign="left">{shortcut.label}</Typography>
+                  </Button>
+                  {selected && <Stack direction="row" spacing={0}>
+                    <IconButton size="small" disabled={position === 0} onClick={() => reorderShortcut(shortcut.id, -1)}
+                      aria-label={'Subir ' + shortcut.label}><ArrowUpwardRounded fontSize="small" /></IconButton>
+                    <IconButton size="small" disabled={position === shortcutDraft.length - 1} onClick={() => reorderShortcut(shortcut.id, 1)}
+                      aria-label={'Bajar ' + shortcut.label}><ArrowDownwardRounded fontSize="small" /></IconButton>
+                  </Stack>}
+                </Box>;
+              })}
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+              {shortcutDraft.length} de 4 accesos seleccionados.
+              {demo ? ' En demostración los cambios no se guardarán en tu cuenta.' : ' Los cambios se guardan en tu perfil.'}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button disabled={shortcutsSaving} onClick={() => setShortcutDialogOpen(false)}>Cancelar</Button>
+            <Button variant="contained" disabled={shortcutsSaving} onClick={() => void saveShortcuts()}>Guardar accesos</Button>
           </DialogActions>
         </Dialog>
         {!desktop && page !== 'pair' && <Box className="mobile-navigation" sx={{ bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider' }}>

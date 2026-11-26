@@ -49,3 +49,16 @@ button{cursor:pointer}
 /* Custom covers should show the image without the decorative landscape overlay. */
 .anniversary-hero[style*="background-image"]:before,.anniversary-hero[style*="background-image"]:after{display:none}
 .cover-edit-button{backdrop-filter:blur(5px)}
+
+/* Accesos rápidos: hasta cuatro favoritos y el botón para editarlos. */
+.shortcut-strip{margin-bottom:18px}
+.shortcut-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px}
+.shortcut-tile{min-width:0!important;min-height:100px;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:9px;white-space:normal;padding:12px 7px!important}
+.shortcut-tile .MuiTypography-root{overflow-wrap:anywhere}
+.shortcut-add{border-style:dashed!important}
+.app-panel[id]{scroll-margin-top:110px}
+@media(max-width:700px){
+  .shortcut-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+  .shortcut-extra-mobile{display:none!important}
+  .shortcut-tile{min-height:94px;gap:6px;padding:10px 5px!important}
+}
