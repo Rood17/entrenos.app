@@ -19,16 +19,15 @@ import { buildTheme } from './theme/mui';
 import { brand, themes, pillarThemes, type Pillar, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
+import { MonthlyLedger, currentMonth } from './MonthlyLedger';
 
-type Page = 'home' | 'tasks' | 'budget' | 'home-finances' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
+type Page = 'home' | 'tasks' | 'budget' | 'home-finances' | 'home-purchases' | 'incomes' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
 type NeedCategory = string;
 type CustomNeedCategory = { value: string; name: string };
-type Commitment = { id: number; origin: string; name: string; category: string; cost: string; frequency: string; due_date: string | null; shared: boolean; owner_share: number; paid: boolean; owner_name: string; monthly_cost: string };
-type FinancialSummary = { monthly_by_origin: Record<'home' | 'fire' | 'prosperity', string>; total_monthly: string };
-const emptyCommitment = { name: '', category: 'Vivienda', cost: '', frequency: 'monthly', due_date: '', shared: false, owner_share: 100, paid: false };
+type FinancialSummary = { real_by_origin: Record<'home' | 'fire' | 'prosperity', string>; expected_income: string; projected_balance: string; real_expenses: string; planned_purchases: string; monthly_by_origin: Record<'home' | 'fire' | 'prosperity', string>; total_monthly: string; household_purchases: string; total_with_purchases: string; income: string; income_count: number; balance: string | null; month: string };
 type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string; shortcut_ids?: ShortcutId[] };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
@@ -51,7 +50,7 @@ const shortcutCatalog: ShortcutDefinition[] = [
   { id: 'projects', pillar: 'sacredFire', label: 'Proyectos', page: 'fire', sectionId: 'fire-projects', icon: <FavoriteRounded /> },
   { id: 'cleaning', pillar: 'home', label: 'Limpieza', page: 'budget', sectionId: 'home-cleaning', icon: <ChecklistRounded /> },
   { id: 'agreements', pillar: 'home', label: 'Acuerdos', page: 'budget', sectionId: 'home-agreements', icon: <FavoriteRounded /> },
-  { id: 'shopping', pillar: 'home', label: 'Compras del hogar', page: 'budget', sectionId: 'home-shopping', icon: <ShoppingCartRounded /> },
+  { id: 'shopping', pillar: 'home', label: 'Compras del hogar', page: 'home-purchases', icon: <ShoppingCartRounded /> },
   { id: 'tasks', pillar: 'home', label: 'Actividades y tareas', page: 'tasks', icon: <CalendarMonthRounded /> },
 ];
 const defaultShortcutIds: ShortcutId[] = ['finances', 'cleaning', 'agreements'];
@@ -167,9 +166,8 @@ export default function App() {
   const [needName, setNeedName] = useState('');
   const [needCost, setNeedCost] = useState('');
   const [needPriority, setNeedPriority] = useState<MonthlyNeed['priority']>('medium');
-  const [commitments, setCommitments] = useState<Commitment[]>([]);
-  const [commitmentDraft, setCommitmentDraft] = useState(emptyCommitment);
-  const [commitmentId, setCommitmentId] = useState<number | null>(null);
+  const [financeMonth, setFinanceMonth] = useState(currentMonth);
+  const [balanceMode, setBalanceMode] = useState<'projected' | 'real'>('projected');
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
   const [financeError, setFinanceError] = useState('');
   const [financeBusy, setFinanceBusy] = useState(false);
@@ -205,8 +203,8 @@ export default function App() {
     sacredFire: isShared ? 'Nuestro fuego sagrado' : 'Mi fuego sagrado',
     prosperity: isShared ? 'Nuestra prosperidad' : 'Mi prosperidad',
   };
-  const activePillar: Pillar | undefined = page === 'budget' || page === 'tasks' || page === 'home-finances' ? 'home' :
-    page === 'fire' ? 'sacredFire' : ['prosperity', 'finances', 'monthly-needs'].includes(page) ? 'prosperity' : undefined;
+  const activePillar: Pillar | undefined = page === 'budget' || page === 'tasks' || page === 'home-finances' || page === 'home-purchases' ? 'home' :
+    page === 'fire' ? 'sacredFire' : ['prosperity', 'finances', 'monthly-needs', 'incomes'].includes(page) ? 'prosperity' : undefined;
   const contentTheme = useMemo(() => activePillar ? buildTheme(themeName, activePillar) : theme, [theme, themeName, activePillar]);
   const inApp = demo || Boolean(accessToken);
   const palette = themes[themeName];
@@ -384,47 +382,17 @@ export default function App() {
   }
 
   useEffect(() => {
-    setCommitments([]); setFinancialSummary(null); setFinanceError('');
-    setCommitmentDraft(emptyCommitment); setCommitmentId(null); setFinanceBusy(false);
+    setFinancialSummary(null); setFinanceError('');
+    setFinanceBusy(false);
     if (!accessToken || demo || (scope === 'shared' && !paired)) return;
-    if (!['home-finances', 'prosperity', 'finances'].includes(page)) return;
+    if (!['prosperity', 'finances'].includes(page)) return;
     let active = true;
     setFinanceBusy(true);
-    const load = page === 'home-finances'
-      ? api<Commitment[]>(`/finances/commitments/?origin=home&scope=${scope}`, {}, accessToken).then(data => { if (active) setCommitments(data); })
-      : api<FinancialSummary>(`/finances/summary/?scope=${scope}`, {}, accessToken).then(data => { if (active) setFinancialSummary(data); });
+    const load = api<FinancialSummary>(`/finances/summary/?scope=${scope}&month=${financeMonth}`, {}, accessToken).then(data => { if (active) setFinancialSummary(data); });
     load.catch(error => { if (active) setFinanceError(error instanceof Error ? error.message : 'No se pudo cargar la información financiera.'); })
       .finally(() => { if (active) setFinanceBusy(false); });
     return () => { active = false; };
-  }, [accessToken, demo, paired, scope, page]);
-
-  async function saveCommitment() {
-    if (!accessToken || scope !== 'personal' || financeBusy) return;
-    if (!commitmentDraft.name.trim() || !commitmentDraft.cost.trim() || !Number.isFinite(Number(commitmentDraft.cost)) || Number(commitmentDraft.cost) < 0) {
-      setFinanceError('Ingresa un concepto y un importe válido.'); return;
-    }
-    setFinanceBusy(true); setFinanceError('');
-    try {
-      const saved = await api<Commitment>(commitmentId ? `/finances/commitments/${commitmentId}/` : '/finances/commitments/', {
-        method: commitmentId ? 'PATCH' : 'POST',
-        body: JSON.stringify({ ...commitmentDraft, origin: 'home', due_date: commitmentDraft.due_date || null }),
-      }, accessToken);
-      setCommitments(previous => [saved, ...previous.filter(c => c.id !== saved.id)]);
-      setCommitmentDraft(emptyCommitment); setCommitmentId(null);
-    } catch (error) { setFinanceError(error instanceof Error ? error.message : 'No se pudo guardar el gasto.'); }
-    finally { setFinanceBusy(false); }
-  }
-
-  async function removeCommitment(id: number) {
-    if (!accessToken || scope !== 'personal' || financeBusy || !window.confirm('¿Eliminar este compromiso financiero?')) return;
-    setFinanceBusy(true); setFinanceError('');
-    try {
-      await api<unknown>(`/finances/commitments/${id}/`, { method: 'DELETE' }, accessToken);
-      setCommitments(previous => previous.filter(c => c.id !== id));
-      if (commitmentId === id) { setCommitmentId(null); setCommitmentDraft(emptyCommitment); }
-    } catch (error) { setFinanceError(error instanceof Error ? error.message : 'No se pudo eliminar el gasto.'); }
-    finally { setFinanceBusy(false); }
-  }
+  }, [accessToken, demo, paired, scope, page, financeMonth]);
 
   function resetNeedForm() {
     setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedCategory('other'); setNeedShared(false); setEditingNeed(null);
@@ -1132,9 +1100,9 @@ export default function App() {
                 </Typography>
               </Panel>
               <Panel title="Compras y gastos del hogar" icon={<ShoppingCartRounded />} sectionId="home-shopping"
-                action={<Chip size="small" label="Próximamente" />}>
+                action={<Button size="small" onClick={() => navigate('home-purchases')}>Entrar</Button>}>
                 <Typography color="text.secondary" variant="body2">
-                  Aquí reuniremos las compras necesarias para la casa. Los importes podrán consultarse después en Finanzas, con privacidad configurable.
+                  Organiza el súper y las compras domésticas por mes. Los gastos realizados se consolidan en Prosperidad.
                 </Typography>
               </Panel>
               <Panel title="Finanzas del hogar" icon={<WalletRounded />} action={<Button size="small" onClick={() => navigate('home-finances')}>Entrar</Button>}>
@@ -1142,47 +1110,20 @@ export default function App() {
               </Panel>
             </Box>
           </Box>}
+          {page === 'home-purchases' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('budget')} sx={{ mb: 2 }}>Volver a {pillarTitles.home}</Button>
+            <MonthlyLedger key={'purchases-' + scope} kind="purchases" scope={scope} token={accessToken} demo={demo} paired={paired} month={financeMonth} onMonth={setFinanceMonth} />
+            <Button onClick={() => navigate('prosperity')}>Consultar balance en Prosperidad</Button>
+          </Box>}
+          {page === 'incomes' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('finances')} sx={{ mb: 2 }}>Volver a Finanzas</Button>
+            <MonthlyLedger key={'incomes-' + scope} kind="incomes" scope={scope} token={accessToken} demo={demo} paired={paired} month={financeMonth} onMonth={setFinanceMonth} />
+            <Button onClick={() => navigate('prosperity')}>Consultar balance en Prosperidad</Button>
+          </Box>}
           {page === 'home-finances' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
             <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('budget')} sx={{ mb: 2 }}>Volver a {pillarTitles.home}</Button>
-            <Panel title="Finanzas del hogar" icon={<WalletRounded />}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Registra renta, servicios y compromisos recurrentes de vivienda. Su equivalente mensual se integra automáticamente en Prosperidad.</Typography>
-              {financeError && <Alert severity="error" sx={{ mb: 2 }}>{financeError}</Alert>}
-              {financeBusy && <LinearProgress sx={{ mb: 2 }} />}
-              {demo ? <Alert severity="info">Inicia sesión para guardar gastos reales.</Alert> : <>
-              {scope === 'personal' && <Box component="form" onSubmit={e => { e.preventDefault(); void saveCommitment(); }} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 3 }}>
-                <TextField required label="Concepto" value={commitmentDraft.name} inputProps={{ maxLength: 150 }} onChange={e => setCommitmentDraft(d => ({ ...d, name: e.target.value }))} />
-                <TextField select label="Categoría" value={commitmentDraft.category} onChange={e => setCommitmentDraft(d => ({ ...d, category: e.target.value }))}>
-                  {['Vivienda', 'Electricidad', 'Agua', 'Gas', 'Internet', 'Mantenimiento', 'Seguridad', 'Otros'].map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-                </TextField>
-                <TextField required type="number" label="Importe por periodo (MXN)" value={commitmentDraft.cost} inputProps={{ min: 0, step: '0.01' }} onChange={e => setCommitmentDraft(d => ({ ...d, cost: e.target.value }))} />
-                <TextField select label="Periodicidad" value={commitmentDraft.frequency} onChange={e => setCommitmentDraft(d => ({ ...d, frequency: e.target.value }))}>
-                  <MenuItem value="monthly">Mensual</MenuItem><MenuItem value="bimonthly">Bimestral</MenuItem><MenuItem value="annual">Anual</MenuItem>
-                </TextField>
-                <TextField type="date" label="Vencimiento" InputLabelProps={{ shrink: true }} value={commitmentDraft.due_date} onChange={e => setCommitmentDraft(d => ({ ...d, due_date: e.target.value }))} />
-                <FormControlLabel control={<Checkbox checked={commitmentDraft.paid} onChange={e => setCommitmentDraft(d => ({ ...d, paid: e.target.checked }))} />} label="Pagado" />
-                <FormControlLabel control={<Checkbox checked={commitmentDraft.shared} disabled={!paired} onChange={e => setCommitmentDraft(d => ({ ...d, shared: e.target.checked, owner_share: 100 }))} />} label="Compartir con mi pareja" />
-                {commitmentDraft.shared && <TextField type="number" label="Mi porcentaje (%)" value={commitmentDraft.owner_share} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => setCommitmentDraft(d => ({ ...d, owner_share: Number(e.target.value) }))} helperText="El porcentaje restante corresponde a tu pareja." />}
-                <Stack direction="row" gap={1}>
-                  <Button type="submit" variant="contained" disabled={financeBusy || !commitmentDraft.name.trim() || !commitmentDraft.cost.trim()}>{commitmentId ? 'Guardar cambios' : 'Añadir gasto'}</Button>
-                  {commitmentId && <Button onClick={() => { setCommitmentId(null); setCommitmentDraft(emptyCommitment); }}>Cancelar</Button>}
-                </Stack>
-              </Box>}
-              <Divider sx={{ mb: 2 }} />
-              <Stack spacing={1.5}>
-                {!commitments.length && !financeBusy && <Typography color="text.secondary">Todavía no hay gastos del hogar registrados en este espacio.</Typography>}
-                {commitments.map(c => <Card key={c.id} variant="outlined"><CardContent>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }}>
-                    <Box sx={{ flex: 1 }}><Typography fontWeight={700}>{c.name}</Typography><Typography variant="body2" color="text.secondary">{c.category} · {c.frequency === 'monthly' ? 'Mensual' : c.frequency === 'bimonthly' ? 'Bimestral' : 'Anual'} · {c.due_date || 'Sin vencimiento'}</Typography>
-                    <Typography variant="caption" color="text.secondary">{scope === 'shared' ? c.owner_name + ' · ' : ''}{c.shared ? 'Compartido · titular ' + c.owner_share + '%' : 'Privado'}</Typography></Box>
-                    <Chip size="small" label={c.paid ? 'Pagado' : 'Pendiente'} color={c.paid ? 'success' : 'default'} />
-                    <Box><Typography fontWeight={700}>{currency(Number(c.cost))}</Typography><Typography variant="caption">{currency(Number(c.monthly_cost))}/mes equivalente</Typography></Box>
-                    {scope === 'personal' && <Stack direction="row"><Button size="small" onClick={() => { setCommitmentId(c.id); setCommitmentDraft({ name: c.name, category: c.category, cost: c.cost, frequency: c.frequency, due_date: c.due_date || '', shared: c.shared, owner_share: c.owner_share, paid: c.paid }); }}>Editar</Button><Button size="small" color="error" disabled={financeBusy} onClick={() => void removeCommitment(c.id)}>Eliminar</Button></Stack>}
-                  </Stack>
-                </CardContent></Card>)}
-              </Stack>
-              </>}
-            </Panel>
-            <Button onClick={() => navigate('prosperity')} startIcon={<SpaRounded />}>Consultar resumen en Prosperidad</Button>
+            <MonthlyLedger key={'commitments-' + scope} kind="commitments" scope={scope} token={accessToken} demo={demo} paired={paired} month={financeMonth} onMonth={setFinanceMonth} />
+            <Button onClick={() => navigate('prosperity')}>Consultar balance en Prosperidad</Button>
           </Box>}
           {page === 'fire' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
             <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 1 }}>
@@ -1214,17 +1155,23 @@ export default function App() {
               <Typography variant="h4">{pillarTitles.prosperity}</Typography>
             </Stack>
             <Typography color="text.secondary" sx={{ mb: 3 }}>{isShared ? 'Construyan estabilidad económica respetando la privacidad de cada persona.' : 'Organiza tus recursos, tus compromisos y tus metas económicas.'}</Typography>
-            <Panel title="Compromisos mensuales consolidados" icon={<WalletRounded />}>
+            <Panel title="Balance mensual consolidado" icon={<WalletRounded />}>
+              <TextField type="month" label="Mes de consulta" InputLabelProps={{ shrink: true }} size="small" value={financeMonth} onChange={e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) setFinanceMonth(e.target.value); }} sx={{ mb: 2 }} />
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{isShared ? 'Solo registros compartidos; importes completos.' : 'Tus necesidades personales y tu parte de los gastos recurrentes, incluidos los que tu pareja te asigna.'} Los gastos anuales y bimestrales se convierten a equivalentes mensuales.</Typography>
               {financeError && <Alert severity="error">{financeError}</Alert>}
               {financeBusy && <LinearProgress />}
               {demo && <Typography color="text.secondary">Inicia sesión para consultar tus importes.</Typography>}
               {financialSummary && <Stack spacing={1.5}>
+                <Tabs value={balanceMode} onChange={(_, v) => setBalanceMode(v)}><Tab value="projected" label="Proyectado" /><Tab value="real" label="Real" /></Tabs>
                 {([{ key: 'home', label: 'Hogar', target: 'home-finances', pillar: 'home' }, { key: 'fire', label: 'Fuego sagrado', target: 'fire', pillar: 'sacredFire' }, { key: 'prosperity', label: 'Prosperidad', target: 'monthly-needs', pillar: 'prosperity' }] as const).map(item => <Stack key={item.key} direction="row" alignItems="center" justifyContent="space-between">
                   <Button size="small" onClick={() => navigate(item.target)} sx={{ color: pillarColors[item.pillar].main }}>{item.label}</Button>
-                  <Typography fontWeight={700}>{currency(Number(financialSummary.monthly_by_origin[item.key]))}</Typography>
+                  <Typography fontWeight={700}>{currency(Number((balanceMode === 'real' ? financialSummary.real_by_origin : financialSummary.monthly_by_origin)[item.key]))}</Typography>
                 </Stack>)}
-                <Divider /><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Total mensual estimado</Typography><Typography variant="h6">{currency(Number(financialSummary.total_monthly))}</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between" alignItems="center"><Button size="small" onClick={() => navigate('home-purchases')} sx={{ color: pillarColors.home.main }}>Compras del hogar</Button><Typography fontWeight={700}>{currency(Number(balanceMode === 'real' ? financialSummary.household_purchases : financialSummary.planned_purchases))}</Typography></Stack>
+                <Divider /><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Compromisos y compras</Typography><Typography variant="h6">{currency(Number(balanceMode === 'real' ? financialSummary.real_expenses : financialSummary.total_with_purchases))}</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between"><Button size="small" onClick={() => navigate('incomes')}>{balanceMode === 'real' ? 'Ingresos recibidos' : 'Ingresos esperados'}</Button><Typography fontWeight={700}>{currency(Number(balanceMode === 'real' ? financialSummary.income : financialSummary.expected_income))}</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Saldo estimado</Typography><Typography variant="h6" color={financialSummary.balance !== null && Number(financialSummary.balance) < 0 ? 'error.main' : 'primary.main'}>{balanceMode === 'projected' ? currency(Number(financialSummary.projected_balance)) : financialSummary.balance === null ? 'Sin ingresos confirmados' : currency(Number(financialSummary.balance))}</Typography></Stack>
+                <Typography variant="caption" color="text.secondary">El balance real solo incluye movimientos confirmados. Las necesidades mensuales existentes y los compromisos sin fecha se incluyen únicamente como previsiones.</Typography>
               </Stack>}
             </Panel>
             <Box className="two-column">
@@ -1252,8 +1199,8 @@ export default function App() {
                 action={<Button size="small" onClick={() => navigate('monthly-needs')}>Entrar</Button>}>
                 <Typography variant="body2" color="text.secondary">Registra tus necesidades recurrentes, organiza sus categorías y decide cuáles compartir con tu pareja.</Typography>
               </Panel>
-              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Chip size="small" label="Próximamente" />}>
-                <Typography variant="body2" color="text.secondary">Más adelante podrás decidir qué información financiera mostrar a tu pareja.</Typography>
+              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Button size="small" onClick={() => navigate('incomes')}>Entrar</Button>}>
+                <Typography variant="body2" color="text.secondary">Registra salarios e ingresos netos por mes y decide cuáles compartir.</Typography>
               </Panel>
               <Panel title="Compras e inversiones" icon={<ShoppingCartRounded />} action={<Chip size="small" label="Próximamente" />}>
                 <Typography variant="body2" color="text.secondary">Planeación de compras, ahorro y otras metas económicas.</Typography>
@@ -1382,7 +1329,7 @@ export default function App() {
                 <Button variant="outlined" color="inherit" size="small" startIcon={<ShoppingCartRounded />}
                   onClick={() => openShortcut('shopping')} sx={{ borderColor: 'divider', borderRadius: 2, color: 'text.secondary' }}>Súper y compras del hogar</Button>
               </Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>La gestión de compras del hogar estará disponible próximamente.</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Consulta las compras del hogar por mes.</Typography>
             </Box>
           </Box>}
           {page === 'profile' && <Box sx={{ maxWidth: 660, mx: 'auto' }}>
