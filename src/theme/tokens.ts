@@ -6,3 +6,22 @@ export const themes={
  dark:{background:'#201B1B',paper:'#302625',text:'#F8E9DD',muted:'#D7BFB1',primary:'#F1B6A5',accent:'#A8C6AE',border:'#604944'},
  premium:{background:'#F1E8DA',paper:'#FFF9EE',text:'#382A20',muted:'#796954',primary:'#82503B',accent:'#687A54',border:'#D6C4A9'},
 } as const;
+
+export type Pillar = 'home' | 'sacredFire' | 'prosperity';
+export const pillarThemes = {
+ light: {
+  home: { main: '#426B73', soft: '#E1EBED', contrast: '#FFFFFF' },
+  sacredFire: { main: '#A94F3E', soft: '#F6E5DF', contrast: '#FFFFFF' },
+  prosperity: { main: '#648D75', soft: '#E7EEE8', contrast: '#182B20' },
+ },
+ dark: {
+  home: { main: '#9BC5CD', soft: '#263D41', contrast: '#17292C' },
+  sacredFire: { main: '#F1B6A5', soft: '#492E29', contrast: '#39201B' },
+  prosperity: { main: '#A8C6AE', soft: '#2A4034', contrast: '#182B20' },
+ },
+ premium: {
+  home: { main: '#426B73', soft: '#E1EBE8', contrast: '#FFFFFF' },
+  sacredFire: { main: '#A94F3E', soft: '#F3E2D8', contrast: '#FFFFFF' },
+  prosperity: { main: '#58795D', soft: '#E8EBDC', contrast: '#FFFFFF' },
+ },
+} as const;
