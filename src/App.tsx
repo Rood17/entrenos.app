@@ -334,7 +334,7 @@ export default function App() {
         ? `/finances/monthly-needs/${editingNeed}/` : '/finances/monthly-needs/', {
         method: editingNeed ? 'PATCH' : 'POST',
         body: JSON.stringify({ name: needName.trim(), cost: numeric.toFixed(2),
-          priority: needPriority, shared: needShared }),
+          category: needCategory, priority: needPriority, shared: needShared }),
       }, accessToken);
       setMonthlyNeeds(old => editingNeed
         ? old.map(need => need.id === editingNeed ? value : need)
@@ -1054,9 +1054,18 @@ export default function App() {
               {needsLoading && <LinearProgress sx={{ mb: 2 }} />}
               {demo ? <Alert severity="info">Inicia sesión para crear y guardar necesidades reales.</Alert> : <>
                 {scope === 'personal' && <Box component="form" onSubmit={event => { event.preventDefault(); void saveNeed(); }}
-                  sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr' }, gap: 2, mb: 3 }}>
+                  sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 2, mb: 3 }}>
                   <TextField required label="Nombre de la necesidad" value={needName}
                     inputProps={{ maxLength: 150 }} onChange={e => setNeedName(e.target.value)} />
+                  <TextField select required label="Categoría" value={needCategory}
+                    onChange={e => setNeedCategory(e.target.value as NeedCategory)}>
+                    {needCategories.map(category => <MenuItem key={category.value} value={category.value}>
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <Box sx={{ display: 'flex', color: 'primary.main' }}>{category.icon}</Box>
+                        <span>{category.label}</span>
+                      </Stack>
+                    </MenuItem>)}
+                  </TextField>
                   <TextField required type="number" label="Costo mensual (MXN)" value={needCost}
                     inputProps={{ min: 0, step: '0.01' }} onChange={e => setNeedCost(e.target.value)} />
                   <TextField select label="Prioridad" value={needPriority}
@@ -1076,29 +1085,68 @@ export default function App() {
                 {monthlyNeeds.length === 0 ? <Typography color="text.secondary">
                   {scope === 'personal' ? 'Aún no tienes necesidades registradas.' :
                     'No hay necesidades compartidas todavía.'}
-                </Typography> : <Stack spacing={1}>
-                  {monthlyNeeds.map(need => <Card key={need.id} variant="outlined" sx={{ boxShadow: 'none' }}>
-                    <CardContent sx={{ '&:last-child': { pb: 2 } }}>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography fontWeight={700}>{need.name}</Typography>
-                          <Typography variant="caption" color="text.secondary">{scope === 'shared' ? `Registrada por ${need.owner_name}` : need.shared ? 'Visible para tu pareja' : 'Solo tú puedes verla'}</Typography>
+                </Typography> : <Stack spacing={2.25}>
+                  {needCategories.map(category => {
+                    const categoryNeeds = monthlyNeeds.filter(need =>
+                      (needCategories.some(entry => entry.value === need.category) ? need.category : 'other') === category.value);
+                    if (!categoryNeeds.length) return null;
+                    const subtotal = categoryNeeds.reduce((sum, need) => sum + Number(need.cost), 0);
+                    return <Box key={category.value} className="needs-category-group"
+                      sx={{ bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider',
+                        borderRadius: 3, p: { xs: 1.4, sm: 2 } }}>
+                      <Stack direction="row" alignItems="center" gap={1.25} sx={{ mb: 1.7 }}>
+                        <Box sx={{ display: 'flex', bgcolor: 'background.paper', color: 'primary.main',
+                          p: 1, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                          {category.icon}
                         </Box>
-                        <Chip size="small" variant="outlined" label={needPriorities.find(p => p.value === need.priority)?.label || need.priority} />
-                        <Typography fontWeight={700}>{currency(Number(need.cost))}/mes</Typography>
-                        {scope === 'personal' && <Stack direction="row" gap={0.5}>
-                          <Button size="small" onClick={() => {
-                            setEditingNeed(need.id); setNeedName(need.name); setNeedCost(need.cost);
-                            setNeedPriority(need.priority); setNeedShared(need.shared);
-                          }}>Editar</Button>
-                          <Button size="small" color="error" onClick={() => void removeNeed(need.id)}>Eliminar</Button>
-                        </Stack>}
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography fontWeight={700} sx={{ fontSize: { xs: '1rem', sm: '1.1rem' } }}>
+                            {category.label}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {categoryNeeds.length} {categoryNeeds.length === 1 ? 'necesidad' : 'necesidades'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography fontWeight={700} sx={{ whiteSpace: 'nowrap' }}>{currency(subtotal)}</Typography>
+                          <Typography variant="caption" color="text.secondary">por mes</Typography>
+                        </Box>
                       </Stack>
-                    </CardContent>
-                  </Card>)}
-                  <Stack direction="row" justifyContent="space-between" sx={{ pt: 2 }}>
-                    <Typography fontWeight={600}>Total mensual {scope === 'shared' ? 'compartido' : 'individual'}</Typography>
-                    <Typography fontWeight={700}>{currency(monthlyNeeds.reduce((sum, need) => sum + Number(need.cost), 0))}</Typography>
+                      <Stack spacing={1}>
+                        {categoryNeeds.map(need => <Card key={need.id} variant="outlined"
+                          sx={{ boxShadow: 'none', bgcolor: 'background.paper', borderRadius: 2 }}>
+                          <CardContent sx={{ p: { xs: 1.5, sm: 2 }, '&:last-child': { pb: { xs: 1.5, sm: 2 } } }}>
+                            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.2} alignItems={{ sm: 'center' }}>
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography fontWeight={700}>{need.name}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {scope === 'shared' ? 'Registrada por ' + need.owner_name : need.shared ? 'Visible para tu pareja' : 'Solo tú puedes verla'}
+                                </Typography>
+                              </Box>
+                              <Chip size="small" variant="outlined"
+                                label={needPriorities.find(priority => priority.value === need.priority)?.label || need.priority} />
+                              <Typography fontWeight={700} sx={{ whiteSpace: 'nowrap' }}>
+                                {currency(Number(need.cost))}/mes
+                              </Typography>
+                              {scope === 'personal' && <Stack direction="row" gap={0.5}>
+                                <Button size="small" onClick={() => {
+                                  setEditingNeed(need.id); setNeedName(need.name); setNeedCost(need.cost);
+                                  setNeedPriority(need.priority); setNeedCategory(need.category || 'other'); setNeedShared(need.shared);
+                                }}>Editar</Button>
+                                <Button size="small" color="error" onClick={() => void removeNeed(need.id)}>Eliminar</Button>
+                              </Stack>}
+                            </Stack>
+                          </CardContent>
+                        </Card>)}
+                      </Stack>
+                    </Box>;
+                  })}
+                  <Stack direction="row" justifyContent="space-between" alignItems="center"
+                    sx={{ py: 2, px: { xs: 1, sm: 2 }, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Typography fontWeight={700}>Total mensual {scope === 'shared' ? 'compartido' : 'individual'}</Typography>
+                    <Typography fontWeight={800} variant="h6">
+                      {currency(monthlyNeeds.reduce((sum, need) => sum + Number(need.cost), 0))}
+                    </Typography>
                   </Stack>
                 </Stack>}
               </>}
