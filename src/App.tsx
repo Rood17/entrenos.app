@@ -19,7 +19,7 @@ import { buildTheme } from './theme/mui';
 import { brand, themes, pillarThemes, type Pillar, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
-import { MonthlyLedger, currentMonth, frequencies } from './MonthlyLedger';
+import { MonthlyLedger, currentMonth } from './MonthlyLedger';
 
 type Page = 'home' | 'tasks' | 'budget' | 'home-finances' | 'home-purchases' | 'incomes' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
@@ -27,9 +27,7 @@ type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean }
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
 type NeedCategory = string;
 type CustomNeedCategory = { value: string; name: string };
-type Commitment = { end_date: string | null; id: number; origin: string; name: string; category: string; cost: string; frequency: string; due_date: string | null; shared: boolean; owner_share: number; paid: boolean; owner_name: string; monthly_cost: string };
 type FinancialSummary = { real_by_origin: Record<'home' | 'fire' | 'prosperity', string>; expected_income: string; projected_balance: string; real_expenses: string; planned_purchases: string; monthly_by_origin: Record<'home' | 'fire' | 'prosperity', string>; total_monthly: string; household_purchases: string; total_with_purchases: string; income: string; income_count: number; balance: string | null; month: string };
-const emptyCommitment = { name: '', category: 'Vivienda', cost: '', frequency: 'monthly', due_date: '', end_date: '', shared: false, owner_share: 100, paid: false };
 type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string; shortcut_ids?: ShortcutId[] };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
@@ -168,9 +166,6 @@ export default function App() {
   const [needName, setNeedName] = useState('');
   const [needCost, setNeedCost] = useState('');
   const [needPriority, setNeedPriority] = useState<MonthlyNeed['priority']>('medium');
-  const [commitments, setCommitments] = useState<Commitment[]>([]);
-  const [commitmentDraft, setCommitmentDraft] = useState(emptyCommitment);
-  const [commitmentId, setCommitmentId] = useState<number | null>(null);
   const [financeMonth, setFinanceMonth] = useState(currentMonth);
   const [balanceMode, setBalanceMode] = useState<'projected' | 'real'>('projected');
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
@@ -387,47 +382,17 @@ export default function App() {
   }
 
   useEffect(() => {
-    setCommitments([]); setFinancialSummary(null); setFinanceError('');
-    setCommitmentDraft(emptyCommitment); setCommitmentId(null); setFinanceBusy(false);
+    setFinancialSummary(null); setFinanceError('');
+    setFinanceBusy(false);
     if (!accessToken || demo || (scope === 'shared' && !paired)) return;
-    if (!['home-finances', 'prosperity', 'finances'].includes(page)) return;
+    if (!['prosperity', 'finances'].includes(page)) return;
     let active = true;
     setFinanceBusy(true);
-    const load = page === 'home-finances'
-      ? api<Commitment[]>(`/finances/commitments/?origin=home&scope=${scope}`, {}, accessToken).then(data => { if (active) setCommitments(data); })
-      : api<FinancialSummary>(`/finances/summary/?scope=${scope}&month=${financeMonth}`, {}, accessToken).then(data => { if (active) setFinancialSummary(data); });
+    const load = api<FinancialSummary>(`/finances/summary/?scope=${scope}&month=${financeMonth}`, {}, accessToken).then(data => { if (active) setFinancialSummary(data); });
     load.catch(error => { if (active) setFinanceError(error instanceof Error ? error.message : 'No se pudo cargar la información financiera.'); })
       .finally(() => { if (active) setFinanceBusy(false); });
     return () => { active = false; };
   }, [accessToken, demo, paired, scope, page, financeMonth]);
-
-  async function saveCommitment() {
-    if (!accessToken || scope !== 'personal' || financeBusy) return;
-    if (!commitmentDraft.name.trim() || !commitmentDraft.cost.trim() || !Number.isFinite(Number(commitmentDraft.cost)) || Number(commitmentDraft.cost) < 0) {
-      setFinanceError('Ingresa un concepto y un importe válido.'); return;
-    }
-    setFinanceBusy(true); setFinanceError('');
-    try {
-      const saved = await api<Commitment>(commitmentId ? `/finances/commitments/${commitmentId}/` : '/finances/commitments/', {
-        method: commitmentId ? 'PATCH' : 'POST',
-        body: JSON.stringify({ ...commitmentDraft, origin: 'home', due_date: commitmentDraft.due_date || null, end_date: commitmentDraft.end_date || null }),
-      }, accessToken);
-      setCommitments(previous => [saved, ...previous.filter(c => c.id !== saved.id)]);
-      setCommitmentDraft(emptyCommitment); setCommitmentId(null);
-    } catch (error) { setFinanceError(error instanceof Error ? error.message : 'No se pudo guardar el gasto.'); }
-    finally { setFinanceBusy(false); }
-  }
-
-  async function removeCommitment(id: number) {
-    if (!accessToken || scope !== 'personal' || financeBusy || !window.confirm('¿Eliminar este compromiso financiero?')) return;
-    setFinanceBusy(true); setFinanceError('');
-    try {
-      await api<unknown>(`/finances/commitments/${id}/`, { method: 'DELETE' }, accessToken);
-      setCommitments(previous => previous.filter(c => c.id !== id));
-      if (commitmentId === id) { setCommitmentId(null); setCommitmentDraft(emptyCommitment); }
-    } catch (error) { setFinanceError(error instanceof Error ? error.message : 'No se pudo eliminar el gasto.'); }
-    finally { setFinanceBusy(false); }
-  }
 
   function resetNeedForm() {
     setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedCategory('other'); setNeedShared(false); setEditingNeed(null);
@@ -1157,46 +1122,8 @@ export default function App() {
           </Box>}
           {page === 'home-finances' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
             <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('budget')} sx={{ mb: 2 }}>Volver a {pillarTitles.home}</Button>
-            <Panel title="Finanzas del hogar" icon={<WalletRounded />}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Registra renta, servicios y compromisos recurrentes de vivienda. Su equivalente mensual se integra automáticamente en Prosperidad.</Typography>
-              {financeError && <Alert severity="error" sx={{ mb: 2 }}>{financeError}</Alert>}
-              {financeBusy && <LinearProgress sx={{ mb: 2 }} />}
-              {demo ? <Alert severity="info">Inicia sesión para guardar gastos reales.</Alert> : <>
-              {scope === 'personal' && <Box component="form" onSubmit={e => { e.preventDefault(); void saveCommitment(); }} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 3 }}>
-                <TextField required label="Concepto" value={commitmentDraft.name} inputProps={{ maxLength: 150 }} onChange={e => setCommitmentDraft(d => ({ ...d, name: e.target.value }))} />
-                <TextField select label="Categoría" value={commitmentDraft.category} onChange={e => setCommitmentDraft(d => ({ ...d, category: e.target.value }))}>
-                  {['Vivienda', 'Electricidad', 'Agua', 'Gas', 'Internet', 'Mantenimiento', 'Seguridad', 'Otros'].map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-                </TextField>
-                <TextField required type="number" label="Importe por periodo (MXN)" value={commitmentDraft.cost} inputProps={{ min: 0, step: '0.01' }} onChange={e => setCommitmentDraft(d => ({ ...d, cost: e.target.value }))} />
-                <TextField select label="Periodicidad" value={commitmentDraft.frequency} onChange={e => setCommitmentDraft(d => ({ ...d, frequency: e.target.value }))}>
-                  {frequencies.map(f => <MenuItem key={f.value} value={f.value}>{f.label}</MenuItem>)}
-                </TextField>
-                <TextField required type="date" label="Primer vencimiento" InputLabelProps={{ shrink: true }} value={commitmentDraft.due_date} onChange={e => setCommitmentDraft(d => ({ ...d, due_date: e.target.value }))} />
-                {commitmentDraft.frequency !== "once" && <TextField type="date" label="Finalización (opcional)" InputLabelProps={{ shrink: true }} value={commitmentDraft.end_date} onChange={e => setCommitmentDraft(d => ({ ...d, end_date: e.target.value }))} />}
-                <FormControlLabel control={<Checkbox checked={commitmentDraft.paid} onChange={e => setCommitmentDraft(d => ({ ...d, paid: e.target.checked }))} />} label="Primer vencimiento pagado" />
-                <FormControlLabel control={<Checkbox checked={commitmentDraft.shared} disabled={!paired} onChange={e => setCommitmentDraft(d => ({ ...d, shared: e.target.checked, owner_share: 100 }))} />} label="Compartir con mi pareja" />
-                {commitmentDraft.shared && <TextField type="number" label="Mi porcentaje (%)" value={commitmentDraft.owner_share} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => setCommitmentDraft(d => ({ ...d, owner_share: Number(e.target.value) }))} helperText="El porcentaje restante corresponde a tu pareja." />}
-                <Stack direction="row" gap={1}>
-                  <Button type="submit" variant="contained" disabled={financeBusy || !commitmentDraft.name.trim() || !commitmentDraft.cost.trim()}>{commitmentId ? 'Guardar cambios' : 'Añadir gasto'}</Button>
-                  {commitmentId && <Button onClick={() => { setCommitmentId(null); setCommitmentDraft(emptyCommitment); }}>Cancelar</Button>}
-                </Stack>
-              </Box>}
-              <Divider sx={{ mb: 2 }} />
-              <Stack spacing={1.5}>
-                {!commitments.length && !financeBusy && <Typography color="text.secondary">Todavía no hay gastos del hogar registrados en este espacio.</Typography>}
-                {commitments.map(c => <Card key={c.id} variant="outlined"><CardContent>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }}>
-                    <Box sx={{ flex: 1 }}><Typography fontWeight={700}>{c.name}</Typography><Typography variant="body2" color="text.secondary">{c.category} · {frequencies.find(f => f.value === c.frequency)?.label || c.frequency} · {c.due_date || 'Sin vencimiento'}</Typography>
-                    <Typography variant="caption" color="text.secondary">{scope === 'shared' ? c.owner_name + ' · ' : ''}{c.shared ? 'Compartido · titular ' + c.owner_share + '%' : 'Privado'}</Typography></Box>
-                    <Chip size="small" label={c.paid ? 'Pagado' : 'Pendiente'} color={c.paid ? 'success' : 'default'} />
-                    <Box><Typography fontWeight={700}>{currency(Number(c.cost))}</Typography><Typography variant="caption">{currency(Number(c.monthly_cost))}/mes equivalente</Typography></Box>
-                    {scope === 'personal' && <Stack direction="row"><Button size="small" onClick={() => { setCommitmentId(c.id); setCommitmentDraft({ name: c.name, category: c.category, cost: c.cost, frequency: c.frequency, due_date: c.due_date || '', end_date: c.end_date || '', shared: c.shared, owner_share: c.owner_share, paid: c.paid }); }}>Editar</Button><Button size="small" color="error" disabled={financeBusy} onClick={() => void removeCommitment(c.id)}>Eliminar</Button></Stack>}
-                  </Stack>
-                </CardContent></Card>)}
-              </Stack>
-              </>}
-            </Panel>
-            <Button onClick={() => navigate('prosperity')} startIcon={<SpaRounded />}>Consultar resumen en Prosperidad</Button>
+            <MonthlyLedger key={'commitments-' + scope} kind="commitments" scope={scope} token={accessToken} demo={demo} paired={paired} month={financeMonth} onMonth={setFinanceMonth} />
+            <Button onClick={() => navigate('prosperity')}>Consultar balance en Prosperidad</Button>
           </Box>}
           {page === 'fire' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
             <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 1 }}>
