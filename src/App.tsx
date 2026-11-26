@@ -596,7 +596,7 @@ export default function App() {
     if (demo || !accessToken) return;
     setLoading(true); setMessage('');
     try {
-      if (paired) {
+      if (isShared) {
         const result = await api<{ image_url: string }>('/couples/me/', {
           method: 'PATCH', body: JSON.stringify({ image_url: imageDraft.trim() }),
         }, accessToken);
@@ -1306,11 +1306,11 @@ export default function App() {
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Introduce una URL HTTPS pública para utilizar tu propia foto. Si la dejas vacía,
-              volverá el atardecer predeterminado. {paired ? 'La fotografía será visible para ambos.' : 'Solo se cambiará tu portada individual.'}
+              volverá el atardecer predeterminado. {isShared ? 'La fotografía será visible para ambos.' : 'Solo se cambiará tu portada individual.'}
             </Typography>
             <TextField fullWidth label="URL de la imagen" placeholder="https://..."
-              value={paired ? imageDraft : personalCoverDraft}
-              onChange={e => paired ? setImageDraft(e.target.value) : setPersonalCoverDraft(e.target.value)} />
+              value={isShared ? imageDraft : personalCoverDraft}
+              onChange={e => isShared ? setImageDraft(e.target.value) : setPersonalCoverDraft(e.target.value)} />
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setCoverDialogOpen(false)}>Cancelar</Button>
