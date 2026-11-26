@@ -13,14 +13,14 @@ import {
   NotificationsNoneRounded, PersonOutlineRounded, PushPinRounded,
   SettingsRounded, ShoppingCartRounded, WalletRounded,
   ArrowDownwardRounded, ArrowUpwardRounded, HealthAndSafetyRounded, RestaurantRounded,
-  DirectionsCarRounded, MovieRounded, SchoolRounded, WifiRounded, SavingsRounded, CategoryRounded
+  DirectionsCarRounded, MovieRounded, SchoolRounded, WifiRounded, SavingsRounded, CategoryRounded, SpaRounded, ChatBubbleOutlineRounded, EventAvailableRounded
 } from '@mui/icons-material';
 import { buildTheme } from './theme/mui';
-import { brand, themes, type ThemeName } from './theme/tokens';
+import { brand, themes, pillarThemes, type Pillar, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
 
-type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
+type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
@@ -41,14 +41,14 @@ const needCategories: { value: NeedCategory; label: string; icon: ReactElement }
   { value: 'savings', label: 'Ahorro y metas', icon: <SavingsRounded /> },
   { value: 'other', label: 'Otros', icon: <CategoryRounded /> },
 ];
-type ShortcutDefinition = { id: ShortcutId; label: string; page: Page; sectionId?: string; icon: ReactElement };
+type ShortcutDefinition = { id: ShortcutId; label: string; page: Page; sectionId?: string; icon: ReactElement; pillar: Pillar };
 const shortcutCatalog: ShortcutDefinition[] = [
-  { id: 'finances', label: 'Finanzas', page: 'finances', icon: <WalletRounded /> },
-  { id: 'projects', label: 'Proyectos', page: 'fire', sectionId: 'fire-projects', icon: <FavoriteRounded /> },
-  { id: 'cleaning', label: 'Limpieza', page: 'budget', sectionId: 'home-cleaning', icon: <ChecklistRounded /> },
-  { id: 'agreements', label: 'Acuerdos', page: 'budget', sectionId: 'home-agreements', icon: <FavoriteRounded /> },
-  { id: 'shopping', label: 'Compras del hogar', page: 'budget', sectionId: 'home-shopping', icon: <ShoppingCartRounded /> },
-  { id: 'tasks', label: 'Actividades y tareas', page: 'tasks', icon: <CalendarMonthRounded /> },
+  { id: 'finances', pillar: 'prosperity', label: 'Finanzas', page: 'finances', icon: <WalletRounded /> },
+  { id: 'projects', pillar: 'sacredFire', label: 'Proyectos', page: 'fire', sectionId: 'fire-projects', icon: <FavoriteRounded /> },
+  { id: 'cleaning', pillar: 'home', label: 'Limpieza', page: 'budget', sectionId: 'home-cleaning', icon: <ChecklistRounded /> },
+  { id: 'agreements', pillar: 'home', label: 'Acuerdos', page: 'budget', sectionId: 'home-agreements', icon: <FavoriteRounded /> },
+  { id: 'shopping', pillar: 'home', label: 'Compras del hogar', page: 'budget', sectionId: 'home-shopping', icon: <ShoppingCartRounded /> },
+  { id: 'tasks', pillar: 'home', label: 'Actividades y tareas', page: 'tasks', icon: <CalendarMonthRounded /> },
 ];
 const defaultShortcutIds: ShortcutId[] = ['finances', 'cleaning', 'agreements'];
 function normalizedShortcutIds(value: unknown): ShortcutId[] {
@@ -91,14 +91,15 @@ function BrandLogo({ themeName, onClick, large = false }: {
   );
 }
 
-function Panel({ title, action, children, icon, sectionId }: {
-  title: string; action?: ReactNode; children: ReactNode; icon?: ReactNode; sectionId?: string
+function Panel({ title, action, children, icon, sectionId, tone }: {
+  title: string; action?: ReactNode; children: ReactNode; icon?: ReactNode; sectionId?: string;
+  tone?: { main: string; soft: string; contrast: string }
 }) {
-  return <Card id={sectionId} className="app-panel">
+  return <Card id={sectionId} className="app-panel" sx={tone ? { borderColor: tone.main + '55', '& .MuiButton-text': { color: tone.main } } : undefined}>
     <CardContent sx={{ p: { xs: 2, sm: 2.5 }, '&:last-child': { pb: { xs: 2, sm: 2.5 } } }}>
       <Stack direction="row" alignItems="center" spacing={1} mb={2}>
-        {icon && <Box sx={{ color: 'primary.main', display: 'flex' }}>{icon}</Box>}
-        <Typography variant="h6" sx={{ flex: 1, fontSize: '1.15rem' }}>{title}</Typography>
+        {icon && <Box sx={{ color: tone?.main || 'primary.main', display: 'flex' }}>{icon}</Box>}
+        <Typography variant="h6" sx={{ flex: 1, fontSize: '1.15rem', color: tone?.main }}>{title}</Typography>
         {action}
       </Stack>
       {children}
@@ -137,7 +138,6 @@ export default function App() {
   const [ruleTitle, setRuleTitle] = useState('');
   const [ruleContent, setRuleContent] = useState('');
   const [ruleTag, setRuleTag] = useState('Convivencia');
-  const personalizedName = (paired ? sharedName : appName).trim() || 'Nuestro espacio';
   const [email, setEmail] = useState('');
   const [personName, setPersonName] = useState('');
   const [profileNameDraft, setProfileNameDraft] = useState('');
@@ -174,7 +174,18 @@ export default function App() {
   const [noteContent, setNoteContent] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [itemError, setItemError] = useState('');
-  const scopeLabel = scope === 'personal' ? 'Mi espacio' : 'Nuestro espacio';
+  const isShared = scope === 'shared';
+  const scopeLabel = isShared ? 'Nuestro espacio' : 'Mi espacio';
+  const personalizedName = (isShared ? sharedName : appName).trim() || scopeLabel;
+  const pillarColors = pillarThemes[themeName];
+  const pillarTitles = {
+    home: isShared ? 'Nuestro hogar' : 'Mi hogar',
+    sacredFire: isShared ? 'Nuestro fuego sagrado' : 'Mi fuego sagrado',
+    prosperity: isShared ? 'Nuestra prosperidad' : 'Mi prosperidad',
+  };
+  const activePillar: Pillar | undefined = page === 'budget' || page === 'tasks' ? 'home' :
+    page === 'fire' ? 'sacredFire' : ['prosperity', 'finances', 'monthly-needs'].includes(page) ? 'prosperity' : undefined;
+  const contentTheme = useMemo(() => activePillar ? buildTheme(themeName, activePillar) : theme, [theme, themeName, activePillar]);
   const inApp = demo || Boolean(accessToken);
   const palette = themes[themeName];
 
@@ -289,8 +300,8 @@ export default function App() {
     if (!shortcut) return null;
     return <Chip key={id} clickable icon={shortcut.icon} label={shortcut.label} onClick={() => openShortcut(id)}
       aria-label={'Ir a ' + shortcut.label} sx={{ height: 38, borderRadius: 2.5, fontSize: '0.83rem', fontWeight: 500,
-        border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper',
-        '& .MuiChip-icon': { ml: 1, color: 'primary.main' }, '&:hover': { bgcolor: 'action.hover' } }} />;
+        border: '1px solid', borderColor: pillarColors[shortcut.pillar].main + '55', bgcolor: pillarColors[shortcut.pillar].soft,
+        color: 'text.primary', '& .MuiChip-icon': { ml: 1, color: pillarColors[shortcut.pillar].main }, '&:hover': { borderColor: pillarColors[shortcut.pillar].main } }} />;
   }
 
   useEffect(() => {
@@ -603,12 +614,13 @@ export default function App() {
     setAccountMenuAnchor(null); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
 
-  const desktopNav = [
-    { value: 'budget' as const, label: 'Nuestro hogar', icon: <HomeRounded /> },
-    { value: 'fire' as const, label: 'Fuego sagrado', icon: <LocalFireDepartmentRounded /> },
+  const desktopNav: { value: Page; label: string; icon: ReactElement; pillar: Pillar }[] = [
+    { value: 'budget', label: 'Hogar', icon: <HomeRounded />, pillar: 'home' },
+    { value: 'fire', label: 'Fuego sagrado', icon: <LocalFireDepartmentRounded />, pillar: 'sacredFire' },
+    { value: 'prosperity', label: 'Prosperidad', icon: <SpaRounded />, pillar: 'prosperity' },
   ];
-  const mobileNav = [
-    { value: 'home' as const, label: 'Inicio', icon: <HomeRounded /> },
+  const mobileNav: { value: Page; label: string; icon: ReactElement; pillar?: Pillar }[] = [
+    { value: 'home', label: 'Inicio', icon: <HomeRounded /> },
     ...desktopNav,
   ];
 
@@ -758,8 +770,11 @@ export default function App() {
             </Box>
             {desktop && <Stack direction="row" gap={1} sx={{ flex: 1, justifyContent: 'center' }}>
               {desktopNav.map(item => <Button key={item.value} startIcon={item.icon}
-                variant={page === item.value || ((page === 'finances' || page === 'monthly-needs') && item.value === 'fire') ? 'contained' : 'text'}
-                onClick={() => navigate(item.value)} sx={{ px: 2.5 }}>{item.label}</Button>)}
+                variant={activePillar === item.pillar ? 'contained' : 'text'}
+                onClick={() => navigate(item.value)} sx={{ px: 1.5, whiteSpace: 'nowrap',
+                  color: activePillar === item.pillar ? pillarColors[item.pillar].contrast : pillarColors[item.pillar].main,
+                  bgcolor: activePillar === item.pillar ? pillarColors[item.pillar].main : 'transparent',
+                  '&:hover': { bgcolor: activePillar === item.pillar ? pillarColors[item.pillar].main : pillarColors[item.pillar].soft } }}>{item.label}</Button>)}
             </Stack>}
             {!desktop && <Box sx={{ flex: 1 }} />}
             {!demo && !paired && <Button size="small" variant="outlined"
@@ -785,6 +800,7 @@ export default function App() {
             </Menu>
           </Toolbar>
         </AppBar>
+        <ThemeProvider theme={contentTheme}>
         <Container maxWidth={false} sx={{ maxWidth: '1500px', px: { xs: 2, sm: 3, lg: 5 }, pt: { xs: 3, md: 4 }, pb: { xs: 12, md: 5 } }}>
           {(demo || page === 'home') && <Alert severity="info" sx={{ mb: 2 }}>
             Las tareas y notas se guardan en tu espacio seleccionado. El aniversario, los recuerdos y los presupuestos aún son ejemplos visuales.
@@ -858,8 +874,8 @@ export default function App() {
                 <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>{personName ? `Qué gusto verte, ${personName}` : 'Tu espacio para crecer'}</Typography>
                 <Typography color="text.secondary">Un lugar para construir lo que importa.</Typography>
               </Box>
-              <Box className="anniversary-hero" sx={(paired ? sharedImage : personalCoverUrl) ? {
-                backgroundImage: `linear-gradient(135deg, rgba(45,30,30,.65), rgba(45,30,30,.28)), url("${(paired ? sharedImage : personalCoverUrl).replace(/"/g, '%22')}")`,
+              <Box className="anniversary-hero" sx={(isShared ? sharedImage : personalCoverUrl) ? {
+                backgroundImage: `linear-gradient(135deg, rgba(45,30,30,.65), rgba(45,30,30,.28)), url("${(isShared ? sharedImage : personalCoverUrl).replace(/"/g, '%22')}")`,
                 backgroundSize: 'cover', backgroundPosition: 'center',
               } : undefined}>
                 <Button size="small" className="cover-edit-button" variant="contained"
@@ -870,7 +886,7 @@ export default function App() {
                   <Box component="img" src={themeName === 'dark' ? brand.assets.dark : brand.assets.light}
                     alt="Símbolo de EntreNos" sx={{ width: 65, height: 65, objectFit: 'contain', mb: 1 }} />
                   <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: { xs: '2.2rem', sm: '3.1rem' }, lineHeight: 1.15 }}>
-                    {paired ? sharedName.trim() || 'Nuestro espacio' : appName.trim() || 'Mi espacio'}
+                    {personalizedName}
                   </Typography>
                   <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: { xs: '1.15rem', sm: '1.45rem' }, mt: 1, maxWidth: 500 }}>
                     «Que nunca nos falten razones para escucharnos, elegirnos y crecer juntos».
@@ -889,9 +905,9 @@ export default function App() {
                     return <Button key={id} color="inherit" variant="outlined"
                       className={'shortcut-tile' + (index >= 2 ? ' shortcut-extra-mobile' : '')}
                       onClick={() => openShortcut(id)} aria-label={'Ir a ' + shortcut.label}
-                      sx={{ borderColor: 'divider', bgcolor: 'background.paper', textTransform: 'none',
-                        borderRadius: 2.5, color: 'text.primary', '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' } }}>
-                      <Box sx={{ color: 'primary.main', display: 'flex' }}>{shortcut.icon}</Box>
+                      sx={{ borderColor: pillarColors[shortcut.pillar].main + '55', bgcolor: pillarColors[shortcut.pillar].soft, textTransform: 'none',
+                        borderRadius: 2.5, color: 'text.primary', '&:hover': { borderColor: pillarColors[shortcut.pillar].main } }}>
+                      <Box sx={{ color: pillarColors[shortcut.pillar].main, display: 'flex' }}>{shortcut.icon}</Box>
                       <Typography variant="body2" fontWeight={600} textAlign="center" sx={{ fontSize: '0.8rem', lineHeight: 1.2 }}>
                         {shortcut.label}
                       </Typography>
@@ -1241,6 +1257,7 @@ export default function App() {
             <Button variant="outlined" color="primary" startIcon={<LogoutRounded />} onClick={signOut}>Cerrar sesión</Button>
           </Box>}
         </Container>
+        </ThemeProvider>
         <Dialog open={coverDialogOpen} onClose={() => setCoverDialogOpen(false)} fullWidth maxWidth="sm">
           <DialogTitle>Editar foto de portada</DialogTitle>
           <DialogContent>
@@ -1270,12 +1287,15 @@ export default function App() {
                 const selected = shortcutDraft.includes(shortcut.id);
                 const position = shortcutDraft.indexOf(shortcut.id);
                 return <Box key={shortcut.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1,
-                  border: '1px solid', borderColor: selected ? 'primary.main' : 'divider', borderRadius: 2 }}>
+                  border: '1px solid', borderColor: selected ? pillarColors[shortcut.pillar].main : 'divider', borderRadius: 2 }}>
                   <Button size="small" color={selected ? 'primary' : 'inherit'} variant={selected ? 'contained' : 'text'}
                     disabled={!selected && shortcutDraft.length >= 4}
                     onClick={() => toggleShortcutDraft(shortcut.id)}
                     startIcon={selected ? <CheckCircleRounded /> : <AddRounded />}
-                    sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', textTransform: 'none' }}>
+                    sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', textTransform: 'none',
+                      color: selected ? pillarColors[shortcut.pillar].contrast : pillarColors[shortcut.pillar].main,
+                      bgcolor: selected ? pillarColors[shortcut.pillar].main : 'transparent',
+                      '&:hover': { bgcolor: selected ? pillarColors[shortcut.pillar].main : pillarColors[shortcut.pillar].soft } }}>
                     <Box sx={{ display: 'flex', mr: 0.8 }}>{shortcut.icon}</Box>
                     <Typography variant="body2" fontWeight={600} textAlign="left">{shortcut.label}</Typography>
                   </Button>
@@ -1301,7 +1321,9 @@ export default function App() {
         {!desktop && page !== 'pair' && <Box className="mobile-navigation" sx={{ bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider' }}>
           {mobileNav.map(item => <Button key={item.value} aria-label={item.label} onClick={() => navigate(item.value)}
             sx={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25,
-              color: page === item.value || ((page === 'finances' || page === 'monthly-needs') && item.value === 'fire') ? 'primary.main' : 'text.secondary',
+              color: item.pillar ? pillarColors[item.pillar].main : page === 'home' ? 'primary.main' : 'text.secondary',
+              bgcolor: item.pillar && activePillar === item.pillar ? pillarColors[item.pillar].soft : 'transparent',
+              fontWeight: item.pillar && activePillar === item.pillar ? 700 : 500,
               fontSize: 11, px: 0.2 }}>
             {item.icon}{item.label}
           </Button>)}
