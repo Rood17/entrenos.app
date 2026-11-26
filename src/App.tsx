@@ -20,7 +20,7 @@ import { brand, themes, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
 
-type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'finances' | 'profile' | 'pair';
+type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
@@ -306,7 +306,7 @@ export default function App() {
   }, [accessToken, scope, paired, demo]);
 
   useEffect(() => {
-    if (!accessToken || demo || (scope === 'shared' && !paired) || page !== 'finances') return;
+    if (!accessToken || demo || (scope === 'shared' && !paired) || page !== 'monthly-needs') return;
     let active = true;
     setNeedsLoading(true);
     setNeedsError('');
@@ -758,7 +758,7 @@ export default function App() {
             </Box>
             {desktop && <Stack direction="row" gap={1} sx={{ flex: 1, justifyContent: 'center' }}>
               {desktopNav.map(item => <Button key={item.value} startIcon={item.icon}
-                variant={page === item.value || (page === 'finances' && item.value === 'fire') ? 'contained' : 'text'}
+                variant={page === item.value || ((page === 'finances' || page === 'monthly-needs') && item.value === 'fire') ? 'contained' : 'text'}
                 onClick={() => navigate(item.value)} sx={{ px: 2.5 }}>{item.label}</Button>)}
             </Stack>}
             {!desktop && <Box sx={{ flex: 1 }} />}
@@ -1010,12 +1010,6 @@ export default function App() {
                   Aquí reuniremos las compras necesarias para la casa. Los importes podrán consultarse después en Finanzas, con privacidad configurable.
                 </Typography>
               </Panel>
-              <Panel title="Finanzas e inversiones" icon={<WalletRounded />}
-                action={<Chip size="small" label="En diseño" />}>
-                <Typography color="text.secondary" variant="body2">
-                  Ingresos y salarios serán opcionales. Cada persona decidirá si comparte sus cifras. No asumiremos que ambos tienen ingresos.
-                </Typography>
-              </Panel>
             </Box>
           </Box>}
           {page === 'fire' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
@@ -1030,7 +1024,9 @@ export default function App() {
                 <Typography variant="body2" color="text.secondary">
                   Empieza con las necesidades mensuales. Regístralas en tu espacio individual y decide cuáles compartir.
                 </Typography>
-                <Chip label="Necesidades mensuales disponibles" color="success" size="small" sx={{ mt: 2 }} />
+                <Chip clickable icon={<ChecklistRounded />} label="Necesidades mensuales" onClick={() => navigate('monthly-needs')}
+                  sx={{ mt: 2, height: 38, borderRadius: 2.5, border: '1px solid', borderColor: 'divider',
+                    bgcolor: 'background.paper', '& .MuiChip-icon': { color: 'primary.main' } }} />
               </Panel>
               <Panel title="Metas y proyectos" icon={<FavoriteRounded />} sectionId="fire-projects" action={<Chip label="Próximamente" size="small" />}>
                 <Typography variant="body2" color="text.secondary">Sueños, planes y objetivos que quieran construir juntos.</Typography>
@@ -1043,12 +1039,30 @@ export default function App() {
               <Typography variant="h4">Finanzas</Typography>
             </Stack>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              Organiza tus necesidades mensuales. Los demás módulos financieros estarán disponibles próximamente.
+              Organiza tus compromisos recurrentes, presupuestos y metas económicas.
             </Typography>
+            <Box className="two-column">
+              <Panel title="Necesidades mensuales" icon={<ChecklistRounded />}
+                action={<Button size="small" onClick={() => navigate('monthly-needs')}>Entrar</Button>}>
+                <Typography variant="body2" color="text.secondary">Registra tus necesidades recurrentes, organiza sus categorías y decide cuáles compartir con tu pareja.</Typography>
+              </Panel>
+              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Chip size="small" label="Próximamente" />}>
+                <Typography variant="body2" color="text.secondary">Más adelante podrás decidir qué información financiera mostrar a tu pareja.</Typography>
+              </Panel>
+              <Panel title="Compras e inversiones" icon={<ShoppingCartRounded />} action={<Chip size="small" label="Próximamente" />}>
+                <Typography variant="body2" color="text.secondary">Planeación de compras, ahorro y otras metas económicas.</Typography>
+              </Panel>
+            </Box>
+          </Box>}
+          {page === 'monthly-needs' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('finances')} sx={{ mb: 2 }}>Volver a Finanzas</Button>
             <Panel title="Necesidades mensuales" icon={<ChecklistRounded />}>
               <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
                 {scope === 'personal' ? 'Esta es tu lista individual. Comparte únicamente lo que decidas.' :
                   'Solo aparecen las necesidades que cada miembro decidió compartir. Sus valores son informativos, no pagos automáticos.'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                Registra compromisos y necesidades recurrentes como clases, salud o membresías. Para el súper y las compras cotidianas de casa, utiliza Nuestro hogar.
               </Typography>
               {needsError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setNeedsError('')}>{needsError}</Alert>}
               {needsLoading && <LinearProgress sx={{ mb: 2 }} />}
@@ -1151,13 +1165,19 @@ export default function App() {
                 </Stack>}
               </>}
             </Panel>
-            <Box className="two-column">
-              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Chip size="small" label="Próximamente" />}>
-                <Typography variant="body2" color="text.secondary">Más adelante podrás decidir qué información financiera mostrar a tu pareja.</Typography>
-              </Panel>
-              <Panel title="Compras e inversiones" icon={<ShoppingCartRounded />} action={<Chip size="small" label="Próximamente" />}>
-                <Typography variant="body2" color="text.secondary">Planeación de compras, ahorro y otras metas económicas.</Typography>
-              </Panel>
+            <Box component="aside" sx={{ mt: 5, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="overline" color="text.secondary">También te puede servir</Typography>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>Organicen las compras de casa</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Las compras del súper, los productos de limpieza y los gastos cotidianos del hogar se organizan por separado de tus necesidades mensuales.
+              </Typography>
+              <Stack direction="row" gap={1} flexWrap="wrap">
+                <Button variant="outlined" color="inherit" size="small" startIcon={<HomeRounded />}
+                  onClick={() => navigate('budget')} sx={{ borderColor: 'divider', borderRadius: 2, color: 'text.secondary' }}>Nuestro hogar</Button>
+                <Button variant="outlined" color="inherit" size="small" startIcon={<ShoppingCartRounded />}
+                  onClick={() => openShortcut('shopping')} sx={{ borderColor: 'divider', borderRadius: 2, color: 'text.secondary' }}>Súper y compras del hogar</Button>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>La gestión de compras del hogar estará disponible próximamente.</Typography>
             </Box>
           </Box>}
           {page === 'profile' && <Box sx={{ maxWidth: 660, mx: 'auto' }}>
@@ -1281,7 +1301,7 @@ export default function App() {
         {!desktop && page !== 'pair' && <Box className="mobile-navigation" sx={{ bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider' }}>
           {mobileNav.map(item => <Button key={item.value} aria-label={item.label} onClick={() => navigate(item.value)}
             sx={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25,
-              color: page === item.value ? 'primary.main' : 'text.secondary',
+              color: page === item.value || ((page === 'finances' || page === 'monthly-needs') && item.value === 'fire') ? 'primary.main' : 'text.secondary',
               fontSize: 11, px: 0.2 }}>
             {item.icon}{item.label}
           </Button>)}
