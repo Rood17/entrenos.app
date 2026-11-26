@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import {
   Alert, AppBar, Autocomplete, Avatar, Box, Button, Card, CardContent, Checkbox, FormControlLabel, Chip, Container, Dialog, DialogTitle, DialogContent, DialogActions,
   CssBaseline, Divider, IconButton, LinearProgress, Menu, MenuItem, Stack,
@@ -11,7 +11,9 @@ import {
   ChecklistRounded, ContentCopyRounded, DarkModeRounded, FavoriteRounded,
   HomeRounded, LocalFireDepartmentRounded, LightModeRounded, LockOutlineRounded, LogoutRounded,
   NotificationsNoneRounded, PersonOutlineRounded, PushPinRounded,
-  SettingsRounded, ShoppingCartRounded, WalletRounded
+  SettingsRounded, ShoppingCartRounded, WalletRounded,
+  ArrowDownwardRounded, ArrowUpwardRounded, HealthAndSafetyRounded, RestaurantRounded,
+  DirectionsCarRounded, MovieRounded, SchoolRounded, WifiRounded, SavingsRounded, CategoryRounded
 } from '@mui/icons-material';
 import { buildTheme } from './theme/mui';
 import { brand, themes, type ThemeName } from './theme/tokens';
@@ -21,11 +23,39 @@ import './styles.css';
 type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'finances' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
-type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string };
+type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
+type NeedCategory = 'health' | 'food' | 'home' | 'transport' | 'entertainment' | 'education' | 'services' | 'savings' | 'other';
+type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string; shortcut_ids?: ShortcutId[] };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
-type MonthlyNeed = { id: number; name: string; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
+type MonthlyNeed = { id: number; name: string; category: NeedCategory; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
 const needPriorities = [{ value: 'essential', label: 'Esencial' }, { value: 'high', label: 'Alta' }, { value: 'medium', label: 'Media' }, { value: 'low', label: 'Baja' }] as const;
+const needCategories: { value: NeedCategory; label: string; icon: ReactElement }[] = [
+  { value: 'health', label: 'Salud', icon: <HealthAndSafetyRounded /> },
+  { value: 'food', label: 'Alimentación', icon: <RestaurantRounded /> },
+  { value: 'home', label: 'Hogar', icon: <HomeRounded /> },
+  { value: 'transport', label: 'Transporte', icon: <DirectionsCarRounded /> },
+  { value: 'entertainment', label: 'Entretenimiento', icon: <MovieRounded /> },
+  { value: 'education', label: 'Educación', icon: <SchoolRounded /> },
+  { value: 'services', label: 'Servicios', icon: <WifiRounded /> },
+  { value: 'savings', label: 'Ahorro y metas', icon: <SavingsRounded /> },
+  { value: 'other', label: 'Otros', icon: <CategoryRounded /> },
+];
+type ShortcutDefinition = { id: ShortcutId; label: string; page: Page; sectionId?: string; icon: ReactElement };
+const shortcutCatalog: ShortcutDefinition[] = [
+  { id: 'finances', label: 'Finanzas', page: 'finances', icon: <WalletRounded /> },
+  { id: 'projects', label: 'Proyectos', page: 'fire', sectionId: 'fire-projects', icon: <FavoriteRounded /> },
+  { id: 'cleaning', label: 'Limpieza', page: 'budget', sectionId: 'home-cleaning', icon: <ChecklistRounded /> },
+  { id: 'agreements', label: 'Acuerdos', page: 'budget', sectionId: 'home-agreements', icon: <FavoriteRounded /> },
+  { id: 'shopping', label: 'Compras del hogar', page: 'budget', sectionId: 'home-shopping', icon: <ShoppingCartRounded /> },
+  { id: 'tasks', label: 'Actividades y tareas', page: 'tasks', icon: <CalendarMonthRounded /> },
+];
+const defaultShortcutIds: ShortcutId[] = ['finances', 'cleaning', 'agreements'];
+function normalizedShortcutIds(value: unknown): ShortcutId[] {
+  if (!Array.isArray(value)) return [...defaultShortcutIds];
+  const ids = value.filter((id): id is ShortcutId => typeof id === 'string' && shortcutCatalog.some(item => item.id === id));
+  return Array.from(new Set(ids)).slice(0, 4);
+}
 type CoupleData = { couple: { id: number; members: number[]; display_name: string; image_url: string } | null };
 const initialTasks: Task[] = [
   { name: 'Lavar la ropa', priority: 'Alta', done: false },
@@ -61,10 +91,10 @@ function BrandLogo({ themeName, onClick, large = false }: {
   );
 }
 
-function Panel({ title, action, children, icon }: {
-  title: string; action?: ReactNode; children: ReactNode; icon?: ReactNode
+function Panel({ title, action, children, icon, sectionId }: {
+  title: string; action?: ReactNode; children: ReactNode; icon?: ReactNode; sectionId?: string
 }) {
-  return <Card className="app-panel">
+  return <Card id={sectionId} className="app-panel">
     <CardContent sx={{ p: { xs: 2, sm: 2.5 }, '&:last-child': { pb: { xs: 2, sm: 2.5 } } }}>
       <Stack direction="row" alignItems="center" spacing={1} mb={2}>
         {icon && <Box sx={{ color: 'primary.main', display: 'flex' }}>{icon}</Box>}
@@ -81,6 +111,12 @@ export default function App() {
   const theme = useMemo(() => buildTheme(themeName), [themeName]);
   const desktop = useMediaQuery(theme.breakpoints.up('md'));
   const [page, setPage] = useState<Page>('home');
+  const [shortcutTarget, setShortcutTarget] = useState('');
+  const [shortcutIds, setShortcutIds] = useState<ShortcutId[]>([...defaultShortcutIds]);
+  const [shortcutDraft, setShortcutDraft] = useState<ShortcutId[]>([...defaultShortcutIds]);
+  const [shortcutDialogOpen, setShortcutDialogOpen] = useState(false);
+  const [shortcutsSaving, setShortcutsSaving] = useState(false);
+  const [shortcutsError, setShortcutsError] = useState('');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [pendingInvite] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('invite') || '');
   const [showAuth, setShowAuth] = useState(Boolean(new URLSearchParams(window.location.hash.slice(1)).get('invite')));
@@ -127,6 +163,7 @@ export default function App() {
   const [needName, setNeedName] = useState('');
   const [needCost, setNeedCost] = useState('');
   const [needPriority, setNeedPriority] = useState<MonthlyNeed['priority']>('medium');
+  const [needCategory, setNeedCategory] = useState<NeedCategory>('other');
   const [needShared, setNeedShared] = useState(false);
   const [editingNeed, setEditingNeed] = useState<number | null>(null);
   const [needsLoading, setNeedsLoading] = useState(false);
@@ -162,6 +199,7 @@ export default function App() {
         setPersonalCoverDraft(profile.hero_image_url || '');
         setAppName(profile.app_name || '');
         setNameDraft(profile.app_name || '');
+        setShortcutIds(normalizedShortcutIds(profile.shortcut_ids));
         setPaired(Boolean(relation.couple));
         setSharedName(relation.couple?.display_name || '');
         setSharedNameDraft(relation.couple?.display_name || '');
@@ -183,7 +221,76 @@ export default function App() {
   }, [pendingInvite]);
 
   function navigate(next: Page) {
-    setMessage(''); setPage(next);
+    setMessage(''); setShortcutTarget(''); setPage(next);
+  }
+
+  function openShortcut(id: ShortcutId) {
+    const shortcut = shortcutCatalog.find(item => item.id === id);
+    if (!shortcut) return;
+    setMessage('');
+    setPage(shortcut.page);
+    setShortcutTarget(shortcut.sectionId || '');
+  }
+
+  useEffect(() => {
+    if (!shortcutTarget) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(shortcutTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setShortcutTarget('');
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [page, shortcutTarget]);
+
+  function openShortcutEditor() {
+    setShortcutDraft([...shortcutIds]);
+    setShortcutsError('');
+    setShortcutDialogOpen(true);
+  }
+
+  function toggleShortcutDraft(id: ShortcutId) {
+    setShortcutDraft(previous => previous.includes(id)
+      ? previous.filter(existing => existing !== id)
+      : previous.length < 4 ? [...previous, id] : previous);
+  }
+
+  function reorderShortcut(id: ShortcutId, delta: number) {
+    setShortcutDraft(previous => {
+      const from = previous.indexOf(id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= previous.length) return previous;
+      const reordered = [...previous];
+      [reordered[from], reordered[to]] = [reordered[to], reordered[from]];
+      return reordered;
+    });
+  }
+
+  async function saveShortcuts() {
+    if (demo) {
+      setShortcutIds([...shortcutDraft]);
+      setShortcutDialogOpen(false);
+      return;
+    }
+    if (!accessToken) return;
+    setShortcutsSaving(true);
+    setShortcutsError('');
+    try {
+      const profile = await api<UserProfile>('/auth/me/', {
+        method: 'PATCH', body: JSON.stringify({ shortcut_ids: shortcutDraft }),
+      }, accessToken);
+      setShortcutIds(normalizedShortcutIds(profile.shortcut_ids));
+      setShortcutDialogOpen(false);
+    } catch (error) {
+      setShortcutsError(error instanceof Error ? error.message : 'No se pudieron guardar los accesos directos.');
+    } finally { setShortcutsSaving(false); }
+  }
+
+  function shortcutChip(id: ShortcutId) {
+    const shortcut = shortcutCatalog.find(item => item.id === id);
+    if (!shortcut) return null;
+    return <Chip key={id} clickable icon={shortcut.icon} label={shortcut.label} onClick={() => openShortcut(id)}
+      aria-label={'Ir a ' + shortcut.label} sx={{ height: 38, borderRadius: 2.5, fontSize: '0.83rem', fontWeight: 500,
+        border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper',
+        '& .MuiChip-icon': { ml: 1, color: 'primary.main' }, '&:hover': { bgcolor: 'action.hover' } }} />;
   }
 
   useEffect(() => {
@@ -211,7 +318,7 @@ export default function App() {
   }, [accessToken, demo, paired, scope, page]);
 
   function resetNeedForm() {
-    setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedShared(false); setEditingNeed(null);
+    setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedCategory('other'); setNeedShared(false); setEditingNeed(null);
   }
 
   async function saveNeed() {
@@ -314,6 +421,7 @@ export default function App() {
         setPersonName(profile.first_name?.trim() || profile.username || profile.email.split('@')[0]);
         setAppName(profile.app_name || '');
         setNameDraft(profile.app_name || '');
+        setShortcutIds(normalizedShortcutIds(profile.shortcut_ids));
         const relation = await api<CoupleData>('/couples/me/', {}, result.access);
         const linked = Boolean(relation.couple);
         setPaired(linked); setSharedName(relation.couple?.display_name || '');
@@ -491,6 +599,7 @@ export default function App() {
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
     setMonthlyNeeds([]); resetNeedForm(); setPersonalCoverUrl(''); setPersonalCoverDraft('');
+    setShortcutIds([...defaultShortcutIds]); setShortcutDraft([...defaultShortcutIds]); setShortcutDialogOpen(false); setShortcutTarget('');
     setAccountMenuAnchor(null); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
 
