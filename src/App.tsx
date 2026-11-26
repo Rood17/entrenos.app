@@ -13,14 +13,14 @@ import {
   NotificationsNoneRounded, PersonOutlineRounded, PushPinRounded,
   SettingsRounded, ShoppingCartRounded, WalletRounded,
   ArrowDownwardRounded, ArrowUpwardRounded, HealthAndSafetyRounded, RestaurantRounded,
-  DirectionsCarRounded, MovieRounded, SchoolRounded, WifiRounded, SavingsRounded, CategoryRounded
+  DirectionsCarRounded, MovieRounded, SchoolRounded, WifiRounded, SavingsRounded, CategoryRounded, SpaRounded, ChatBubbleOutlineRounded, EventAvailableRounded
 } from '@mui/icons-material';
 import { buildTheme } from './theme/mui';
-import { brand, themes, type ThemeName } from './theme/tokens';
+import { brand, themes, pillarThemes, type Pillar, type ThemeName } from './theme/tokens';
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
 
-type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'finances' | 'profile' | 'pair';
+type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
@@ -41,14 +41,14 @@ const needCategories: { value: NeedCategory; label: string; icon: ReactElement }
   { value: 'savings', label: 'Ahorro y metas', icon: <SavingsRounded /> },
   { value: 'other', label: 'Otros', icon: <CategoryRounded /> },
 ];
-type ShortcutDefinition = { id: ShortcutId; label: string; page: Page; sectionId?: string; icon: ReactElement };
+type ShortcutDefinition = { id: ShortcutId; label: string; page: Page; sectionId?: string; icon: ReactElement; pillar: Pillar };
 const shortcutCatalog: ShortcutDefinition[] = [
-  { id: 'finances', label: 'Finanzas', page: 'finances', icon: <WalletRounded /> },
-  { id: 'projects', label: 'Proyectos', page: 'fire', sectionId: 'fire-projects', icon: <FavoriteRounded /> },
-  { id: 'cleaning', label: 'Limpieza', page: 'budget', sectionId: 'home-cleaning', icon: <ChecklistRounded /> },
-  { id: 'agreements', label: 'Acuerdos', page: 'budget', sectionId: 'home-agreements', icon: <FavoriteRounded /> },
-  { id: 'shopping', label: 'Compras del hogar', page: 'budget', sectionId: 'home-shopping', icon: <ShoppingCartRounded /> },
-  { id: 'tasks', label: 'Actividades y tareas', page: 'tasks', icon: <CalendarMonthRounded /> },
+  { id: 'finances', pillar: 'prosperity', label: 'Finanzas', page: 'finances', icon: <WalletRounded /> },
+  { id: 'projects', pillar: 'sacredFire', label: 'Proyectos', page: 'fire', sectionId: 'fire-projects', icon: <FavoriteRounded /> },
+  { id: 'cleaning', pillar: 'home', label: 'Limpieza', page: 'budget', sectionId: 'home-cleaning', icon: <ChecklistRounded /> },
+  { id: 'agreements', pillar: 'home', label: 'Acuerdos', page: 'budget', sectionId: 'home-agreements', icon: <FavoriteRounded /> },
+  { id: 'shopping', pillar: 'home', label: 'Compras del hogar', page: 'budget', sectionId: 'home-shopping', icon: <ShoppingCartRounded /> },
+  { id: 'tasks', pillar: 'home', label: 'Actividades y tareas', page: 'tasks', icon: <CalendarMonthRounded /> },
 ];
 const defaultShortcutIds: ShortcutId[] = ['finances', 'cleaning', 'agreements'];
 function normalizedShortcutIds(value: unknown): ShortcutId[] {
@@ -91,14 +91,15 @@ function BrandLogo({ themeName, onClick, large = false }: {
   );
 }
 
-function Panel({ title, action, children, icon, sectionId }: {
-  title: string; action?: ReactNode; children: ReactNode; icon?: ReactNode; sectionId?: string
+function Panel({ title, action, children, icon, sectionId, tone }: {
+  title: string; action?: ReactNode; children: ReactNode; icon?: ReactNode; sectionId?: string;
+  tone?: { main: string; soft: string; contrast: string }
 }) {
-  return <Card id={sectionId} className="app-panel">
+  return <Card id={sectionId} className="app-panel" sx={tone ? { borderColor: tone.main + '55', '& .MuiButton-text': { color: tone.main } } : undefined}>
     <CardContent sx={{ p: { xs: 2, sm: 2.5 }, '&:last-child': { pb: { xs: 2, sm: 2.5 } } }}>
       <Stack direction="row" alignItems="center" spacing={1} mb={2}>
-        {icon && <Box sx={{ color: 'primary.main', display: 'flex' }}>{icon}</Box>}
-        <Typography variant="h6" sx={{ flex: 1, fontSize: '1.15rem' }}>{title}</Typography>
+        {icon && <Box sx={{ color: tone?.main || 'primary.main', display: 'flex' }}>{icon}</Box>}
+        <Typography variant="h6" sx={{ flex: 1, fontSize: '1.15rem', color: tone?.main }}>{title}</Typography>
         {action}
       </Stack>
       {children}
@@ -137,7 +138,6 @@ export default function App() {
   const [ruleTitle, setRuleTitle] = useState('');
   const [ruleContent, setRuleContent] = useState('');
   const [ruleTag, setRuleTag] = useState('Convivencia');
-  const personalizedName = (paired ? sharedName : appName).trim() || 'Nuestro espacio';
   const [email, setEmail] = useState('');
   const [personName, setPersonName] = useState('');
   const [profileNameDraft, setProfileNameDraft] = useState('');
@@ -174,7 +174,18 @@ export default function App() {
   const [noteContent, setNoteContent] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [itemError, setItemError] = useState('');
-  const scopeLabel = scope === 'personal' ? 'Mi espacio' : 'Nuestro espacio';
+  const isShared = scope === 'shared';
+  const scopeLabel = isShared ? 'Nuestro espacio' : 'Mi espacio';
+  const personalizedName = (isShared ? sharedName : appName).trim() || scopeLabel;
+  const pillarColors = pillarThemes[themeName];
+  const pillarTitles = {
+    home: isShared ? 'Nuestro hogar' : 'Mi hogar',
+    sacredFire: isShared ? 'Nuestro fuego sagrado' : 'Mi fuego sagrado',
+    prosperity: isShared ? 'Nuestra prosperidad' : 'Mi prosperidad',
+  };
+  const activePillar: Pillar | undefined = page === 'budget' || page === 'tasks' ? 'home' :
+    page === 'fire' ? 'sacredFire' : ['prosperity', 'finances', 'monthly-needs'].includes(page) ? 'prosperity' : undefined;
+  const contentTheme = useMemo(() => activePillar ? buildTheme(themeName, activePillar) : theme, [theme, themeName, activePillar]);
   const inApp = demo || Boolean(accessToken);
   const palette = themes[themeName];
 
@@ -222,6 +233,16 @@ export default function App() {
 
   function navigate(next: Page) {
     setMessage(''); setShortcutTarget(''); setPage(next);
+  }
+
+  function openSection(next: Page, sectionId: string) {
+    setMessage(''); setPage(next); setShortcutTarget(sectionId);
+  }
+  function pillarChipStyle(pillar: Pillar) {
+    const tone = pillarColors[pillar];
+    return { height: 38, borderRadius: 2.5, fontSize: '0.83rem', fontWeight: 500,
+      border: '1px solid', borderColor: tone.main + '55', bgcolor: tone.soft,
+      color: 'text.primary', '& .MuiChip-icon': { ml: 1, color: tone.main }, '&:hover': { borderColor: tone.main } };
   }
 
   function openShortcut(id: ShortcutId) {
@@ -289,8 +310,8 @@ export default function App() {
     if (!shortcut) return null;
     return <Chip key={id} clickable icon={shortcut.icon} label={shortcut.label} onClick={() => openShortcut(id)}
       aria-label={'Ir a ' + shortcut.label} sx={{ height: 38, borderRadius: 2.5, fontSize: '0.83rem', fontWeight: 500,
-        border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper',
-        '& .MuiChip-icon': { ml: 1, color: 'primary.main' }, '&:hover': { bgcolor: 'action.hover' } }} />;
+        border: '1px solid', borderColor: pillarColors[shortcut.pillar].main + '55', bgcolor: pillarColors[shortcut.pillar].soft,
+        color: 'text.primary', '& .MuiChip-icon': { ml: 1, color: pillarColors[shortcut.pillar].main }, '&:hover': { borderColor: pillarColors[shortcut.pillar].main } }} />;
   }
 
   useEffect(() => {
@@ -306,7 +327,7 @@ export default function App() {
   }, [accessToken, scope, paired, demo]);
 
   useEffect(() => {
-    if (!accessToken || demo || (scope === 'shared' && !paired) || page !== 'finances') return;
+    if (!accessToken || demo || (scope === 'shared' && !paired) || page !== 'monthly-needs') return;
     let active = true;
     setNeedsLoading(true);
     setNeedsError('');
@@ -575,7 +596,7 @@ export default function App() {
     if (demo || !accessToken) return;
     setLoading(true); setMessage('');
     try {
-      if (paired) {
+      if (isShared) {
         const result = await api<{ image_url: string }>('/couples/me/', {
           method: 'PATCH', body: JSON.stringify({ image_url: imageDraft.trim() }),
         }, accessToken);
@@ -603,12 +624,13 @@ export default function App() {
     setAccountMenuAnchor(null); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
 
-  const desktopNav = [
-    { value: 'budget' as const, label: 'Nuestro hogar', icon: <HomeRounded /> },
-    { value: 'fire' as const, label: 'Fuego sagrado', icon: <LocalFireDepartmentRounded /> },
+  const desktopNav: { value: Page; label: string; icon: ReactElement; pillar: Pillar }[] = [
+    { value: 'budget', label: 'Hogar', icon: <HomeRounded />, pillar: 'home' },
+    { value: 'fire', label: 'Fuego sagrado', icon: <LocalFireDepartmentRounded />, pillar: 'sacredFire' },
+    { value: 'prosperity', label: 'Prosperidad', icon: <SpaRounded />, pillar: 'prosperity' },
   ];
-  const mobileNav = [
-    { value: 'home' as const, label: 'Inicio', icon: <HomeRounded /> },
+  const mobileNav: { value: Page; label: string; icon: ReactElement; pillar?: Pillar }[] = [
+    { value: 'home', label: 'Inicio', icon: <HomeRounded /> },
     ...desktopNav,
   ];
 
@@ -758,8 +780,11 @@ export default function App() {
             </Box>
             {desktop && <Stack direction="row" gap={1} sx={{ flex: 1, justifyContent: 'center' }}>
               {desktopNav.map(item => <Button key={item.value} startIcon={item.icon}
-                variant={page === item.value || (page === 'finances' && item.value === 'fire') ? 'contained' : 'text'}
-                onClick={() => navigate(item.value)} sx={{ px: 2.5 }}>{item.label}</Button>)}
+                variant={activePillar === item.pillar ? 'contained' : 'text'}
+                onClick={() => navigate(item.value)} sx={{ px: 1.5, whiteSpace: 'nowrap',
+                  color: activePillar === item.pillar ? pillarColors[item.pillar].contrast : pillarColors[item.pillar].main,
+                  bgcolor: activePillar === item.pillar ? pillarColors[item.pillar].main : 'transparent',
+                  '&:hover': { bgcolor: activePillar === item.pillar ? pillarColors[item.pillar].main : pillarColors[item.pillar].soft } }}>{item.label}</Button>)}
             </Stack>}
             {!desktop && <Box sx={{ flex: 1 }} />}
             {!demo && !paired && <Button size="small" variant="outlined"
@@ -785,6 +810,7 @@ export default function App() {
             </Menu>
           </Toolbar>
         </AppBar>
+        <ThemeProvider theme={contentTheme}>
         <Container maxWidth={false} sx={{ maxWidth: '1500px', px: { xs: 2, sm: 3, lg: 5 }, pt: { xs: 3, md: 4 }, pb: { xs: 12, md: 5 } }}>
           {(demo || page === 'home') && <Alert severity="info" sx={{ mb: 2 }}>
             Las tareas y notas se guardan en tu espacio seleccionado. El aniversario, los recuerdos y los presupuestos aún son ejemplos visuales.
@@ -858,8 +884,8 @@ export default function App() {
                 <Typography variant="h4" sx={{ fontSize: { xs: '2rem', md: '2.65rem' } }}>{personName ? `Qué gusto verte, ${personName}` : 'Tu espacio para crecer'}</Typography>
                 <Typography color="text.secondary">Un lugar para construir lo que importa.</Typography>
               </Box>
-              <Box className="anniversary-hero" sx={(paired ? sharedImage : personalCoverUrl) ? {
-                backgroundImage: `linear-gradient(135deg, rgba(45,30,30,.65), rgba(45,30,30,.28)), url("${(paired ? sharedImage : personalCoverUrl).replace(/"/g, '%22')}")`,
+              <Box className="anniversary-hero" sx={(isShared ? sharedImage : personalCoverUrl) ? {
+                backgroundImage: `linear-gradient(135deg, rgba(45,30,30,.65), rgba(45,30,30,.28)), url("${(isShared ? sharedImage : personalCoverUrl).replace(/"/g, '%22')}")`,
                 backgroundSize: 'cover', backgroundPosition: 'center',
               } : undefined}>
                 <Button size="small" className="cover-edit-button" variant="contained"
@@ -870,7 +896,7 @@ export default function App() {
                   <Box component="img" src={themeName === 'dark' ? brand.assets.dark : brand.assets.light}
                     alt="Símbolo de EntreNos" sx={{ width: 65, height: 65, objectFit: 'contain', mb: 1 }} />
                   <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: { xs: '2.2rem', sm: '3.1rem' }, lineHeight: 1.15 }}>
-                    {paired ? sharedName.trim() || 'Nuestro espacio' : appName.trim() || 'Mi espacio'}
+                    {personalizedName}
                   </Typography>
                   <Typography sx={{ fontFamily: 'Georgia, serif', fontSize: { xs: '1.15rem', sm: '1.45rem' }, mt: 1, maxWidth: 500 }}>
                     «Que nunca nos falten razones para escucharnos, elegirnos y crecer juntos».
@@ -889,9 +915,9 @@ export default function App() {
                     return <Button key={id} color="inherit" variant="outlined"
                       className={'shortcut-tile' + (index >= 2 ? ' shortcut-extra-mobile' : '')}
                       onClick={() => openShortcut(id)} aria-label={'Ir a ' + shortcut.label}
-                      sx={{ borderColor: 'divider', bgcolor: 'background.paper', textTransform: 'none',
-                        borderRadius: 2.5, color: 'text.primary', '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' } }}>
-                      <Box sx={{ color: 'primary.main', display: 'flex' }}>{shortcut.icon}</Box>
+                      sx={{ borderColor: pillarColors[shortcut.pillar].main + '55', bgcolor: pillarColors[shortcut.pillar].soft, textTransform: 'none',
+                        borderRadius: 2.5, color: 'text.primary', '&:hover': { borderColor: pillarColors[shortcut.pillar].main } }}>
+                      <Box sx={{ color: pillarColors[shortcut.pillar].main, display: 'flex' }}>{shortcut.icon}</Box>
                       <Typography variant="body2" fontWeight={600} textAlign="center" sx={{ fontSize: '0.8rem', lineHeight: 1.2 }}>
                         {shortcut.label}
                       </Typography>
@@ -935,7 +961,7 @@ export default function App() {
                   </Stack>
                 </Stack>}
               </Panel>
-              <Panel title="Nuestros recuerdos" icon={<FavoriteRounded />}
+              <Panel title={isShared ? 'Nuestros recuerdos' : 'Mis recuerdos'} icon={<FavoriteRounded />}
                 action={<Chip size="small" label="Próximamente" />}>
                 <Typography color="text.secondary">Un lugar para guardar fotos e historias especiales. Lo construiremos en una siguiente etapa.</Typography>
               </Panel>
@@ -947,23 +973,33 @@ export default function App() {
                   Aquí organizaremos pendientes, actividades y tareas personales o compartidas.
                 </Typography>
               </Panel>
-              <Panel title="Nuestra próxima cita" icon={<CalendarMonthRounded />}
+              <Panel title={isShared ? 'Nuestra próxima cita' : 'Mi próxima cita'} icon={<CalendarMonthRounded />}
                 action={<Chip label="Próximamente" size="small" />}>
-                <Typography fontWeight={600}>Un momento para nosotros</Typography>
-                <Typography variant="body2" color="text.secondary">Aquí aparecerán nuestras próximas actividades.</Typography>
+                <Typography fontWeight={600}>{isShared ? 'Un momento para nosotros' : 'Un momento especial'}</Typography>
+                <Typography variant="body2" color="text.secondary">{isShared ? 'Aquí aparecerán nuestras próximas actividades.' : 'Aquí aparecerán tus próximas actividades.'}</Typography>
               </Panel>
-              <Panel title="Nuestro hogar" icon={<HomeRounded />}
+              <Panel title={pillarTitles.home} icon={<HomeRounded />} tone={pillarColors.home}
                 action={<Button size="small" onClick={() => navigate('budget')}>Entrar</Button>}>
-                <Typography color="text.secondary" variant="body2">Organicen juntos la limpieza, los acuerdos y las normas para convivir.</Typography>
+                <Typography color="text.secondary" variant="body2">{isShared ? 'Organicen juntos la limpieza, los acuerdos y las normas para convivir.' : 'Organiza la limpieza, las responsabilidades y las compras de tu hogar.'}</Typography>
                 <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
                   {shortcutChip('cleaning')}{shortcutChip('agreements')}{shortcutChip('shopping')}
                 </Stack>
               </Panel>
-              <Panel title="Nuestro fuego sagrado" icon={<LocalFireDepartmentRounded />}
+              <Panel title={pillarTitles.sacredFire} icon={<LocalFireDepartmentRounded />} tone={pillarColors.sacredFire}
                 action={<Button size="small" onClick={() => navigate('fire')}>Explorar</Button>}>
-                <Typography variant="body2" color="text.secondary">Metas, proyectos y decisiones que alimentan nuestra vida juntos.</Typography>
+                <Typography variant="body2" color="text.secondary">{isShared ? 'Cultiven su relación, sus acuerdos y sus experiencias juntos.' : 'Cultiva tu relación, tus reflexiones y los proyectos que deseas compartir.'}</Typography>
                 <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
-                  {shortcutChip('finances')}{shortcutChip('projects')}
+                  {shortcutChip('projects')}
+                  <Chip clickable icon={<EventAvailableRounded />} label="Citas y salidas" onClick={() => openSection('fire', 'fire-dates')} sx={pillarChipStyle('sacredFire')} />
+                  <Chip clickable icon={<ChatBubbleOutlineRounded />} label="Comunicación" onClick={() => openSection('fire', 'fire-communication')} sx={pillarChipStyle('sacredFire')} />
+                </Stack>
+              </Panel>
+              <Panel title={pillarTitles.prosperity} icon={<SpaRounded />} tone={pillarColors.prosperity}
+                action={<Button size="small" onClick={() => navigate('prosperity')}>Entrar</Button>}>
+                <Typography variant="body2" color="text.secondary">{isShared ? 'Construyan estabilidad económica y metas compartidas.' : 'Organiza tus recursos y construye estabilidad económica.'}</Typography>
+                <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
+                  {shortcutChip('finances')}
+                  <Chip clickable icon={<ChecklistRounded />} label="Necesidades mensuales" onClick={() => navigate('monthly-needs')} sx={pillarChipStyle('prosperity')} />
                 </Stack>
               </Panel>
             </Box>
@@ -989,7 +1025,9 @@ export default function App() {
             </Box>
           </Box>}
           {page === 'budget' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
-            <Typography variant="h4" gutterBottom>Nuestro hogar</Typography>
+            <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 1, color: pillarColors.home.main }}>
+              <HomeRounded sx={{ fontSize: 36 }} /><Typography variant="h4">{pillarTitles.home}</Typography>
+            </Stack>
             <Typography color="text.secondary" sx={{ mb: 3 }}>Pequeños acuerdos para construir una convivencia más sencilla.</Typography>
             <Box className="two-column">
               <Panel title="Limpieza y responsabilidades" icon={<ChecklistRounded />} sectionId="home-cleaning"
@@ -1010,45 +1048,80 @@ export default function App() {
                   Aquí reuniremos las compras necesarias para la casa. Los importes podrán consultarse después en Finanzas, con privacidad configurable.
                 </Typography>
               </Panel>
-              <Panel title="Finanzas e inversiones" icon={<WalletRounded />}
-                action={<Chip size="small" label="En diseño" />}>
-                <Typography color="text.secondary" variant="body2">
-                  Ingresos y salarios serán opcionales. Cada persona decidirá si comparte sus cifras. No asumiremos que ambos tienen ingresos.
-                </Typography>
-              </Panel>
             </Box>
           </Box>}
           {page === 'fire' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
             <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 1 }}>
               <LocalFireDepartmentRounded color="primary" sx={{ fontSize: 36 }} />
-              <Typography variant="h4">Nuestro fuego sagrado</Typography>
+              <Typography variant="h4" color="primary.main">{pillarTitles.sacredFire}</Typography>
             </Stack>
-            <Typography color="text.secondary" sx={{ mb: 3 }}>Ideas y decisiones para construir lo que soñamos juntos.</Typography>
+            <Typography color="text.secondary" sx={{ mb: 3 }}>{isShared ? 'Un espacio para cuidar la relación y construir experiencias juntos.' : 'Un espacio para reflexionar sobre tu relación y lo que deseas cultivar.'}</Typography>
             <Box className="two-column">
-              <Panel title="Finanzas" icon={<WalletRounded />}
-                action={<Button size="small" onClick={() => navigate('finances')}>Entrar</Button>}>
-                <Typography variant="body2" color="text.secondary">
-                  Empieza con las necesidades mensuales. Regístralas en tu espacio individual y decide cuáles compartir.
-                </Typography>
-                <Chip label="Necesidades mensuales disponibles" color="success" size="small" sx={{ mt: 2 }} />
+              <Panel title="Citas y experiencias" icon={<EventAvailableRounded />} sectionId="fire-dates" action={<Chip label="Próximamente" size="small" />}>
+                <Typography variant="body2" color="text.secondary">Ideas para salir, preparar eventos, acordar horarios y compartir momentos especiales.</Typography>
+              </Panel>
+              <Panel title="Comunicación y acuerdos de pareja" icon={<ChatBubbleOutlineRounded />} sectionId="fire-communication" action={<Chip label="Próximamente" size="small" />}>
+                <Typography variant="body2" color="text.secondary">Conversaciones, acuerdos de relación y herramientas para resolver desacuerdos con respeto.</Typography>
+              </Panel>
+              <Panel title="Áreas de mejora" icon={<ChecklistRounded />} action={<Chip label="Próximamente" size="small" />}>
+                <Typography variant="body2" color="text.secondary">Identifica aspectos que te gustaría fortalecer en la relación.</Typography>
+              </Panel>
+              <Panel title="Rituales y tradiciones" icon={<FavoriteRounded />} action={<Chip label="Próximamente" size="small" />}>
+                <Typography variant="body2" color="text.secondary">Pequeñas costumbres para cuidar la conexión.</Typography>
               </Panel>
               <Panel title="Metas y proyectos" icon={<FavoriteRounded />} sectionId="fire-projects" action={<Chip label="Próximamente" size="small" />}>
-                <Typography variant="body2" color="text.secondary">Sueños, planes y objetivos que quieran construir juntos.</Typography>
+                <Typography variant="body2" color="text.secondary">Sueños, planes y objetivos que deseas construir en pareja.</Typography>
+              </Panel>
+            </Box>
+          </Box>}
+          {page === 'prosperity' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
+            <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 1, color: pillarColors.prosperity.main }}>
+              <SpaRounded sx={{ fontSize: 36 }} />
+              <Typography variant="h4">{pillarTitles.prosperity}</Typography>
+            </Stack>
+            <Typography color="text.secondary" sx={{ mb: 3 }}>{isShared ? 'Construyan estabilidad económica respetando la privacidad de cada persona.' : 'Organiza tus recursos, tus compromisos y tus metas económicas.'}</Typography>
+            <Box className="two-column">
+              <Panel title="Finanzas" icon={<WalletRounded />} action={<Button size="small" onClick={() => navigate('finances')}>Entrar</Button>}>
+                <Typography variant="body2" color="text.secondary">Necesidades recurrentes, presupuestos, ahorro e inversiones.</Typography>
+                <Chip clickable icon={<ChecklistRounded />} label="Necesidades mensuales" onClick={() => navigate('monthly-needs')}
+                  sx={{ ...pillarChipStyle('prosperity'), mt: 2 }} />
+              </Panel>
+              <Panel title="Metas financieras y patrimonio" icon={<SavingsRounded />} action={<Chip label="Próximamente" size="small" />}>
+                <Typography variant="body2" color="text.secondary">Metas de ahorro, patrimonio y fondos de emergencia.</Typography>
               </Panel>
             </Box>
           </Box>}
           {page === 'finances' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('prosperity')} sx={{ mb: 2 }}>Volver a {pillarTitles.prosperity}</Button>
             <Stack direction="row" alignItems="center" gap={2} sx={{ mb: 1 }}>
               <WalletRounded color="primary" sx={{ fontSize: 34 }} />
               <Typography variant="h4">Finanzas</Typography>
             </Stack>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              Organiza tus necesidades mensuales. Los demás módulos financieros estarán disponibles próximamente.
+              Organiza tus compromisos recurrentes, presupuestos y metas económicas.
             </Typography>
+            <Box className="two-column">
+              <Panel title="Necesidades mensuales" icon={<ChecklistRounded />}
+                action={<Button size="small" onClick={() => navigate('monthly-needs')}>Entrar</Button>}>
+                <Typography variant="body2" color="text.secondary">Registra tus necesidades recurrentes, organiza sus categorías y decide cuáles compartir con tu pareja.</Typography>
+              </Panel>
+              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Chip size="small" label="Próximamente" />}>
+                <Typography variant="body2" color="text.secondary">Más adelante podrás decidir qué información financiera mostrar a tu pareja.</Typography>
+              </Panel>
+              <Panel title="Compras e inversiones" icon={<ShoppingCartRounded />} action={<Chip size="small" label="Próximamente" />}>
+                <Typography variant="body2" color="text.secondary">Planeación de compras, ahorro y otras metas económicas.</Typography>
+              </Panel>
+            </Box>
+          </Box>}
+          {page === 'monthly-needs' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('finances')} sx={{ mb: 2 }}>Volver a Finanzas</Button>
             <Panel title="Necesidades mensuales" icon={<ChecklistRounded />}>
               <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
                 {scope === 'personal' ? 'Esta es tu lista individual. Comparte únicamente lo que decidas.' :
                   'Solo aparecen las necesidades que cada miembro decidió compartir. Sus valores son informativos, no pagos automáticos.'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                Registra compromisos y necesidades recurrentes como clases, salud o membresías. Para el súper y las compras cotidianas de casa, utiliza {pillarTitles.home}.
               </Typography>
               {needsError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setNeedsError('')}>{needsError}</Alert>}
               {needsLoading && <LinearProgress sx={{ mb: 2 }} />}
@@ -1151,13 +1224,19 @@ export default function App() {
                 </Stack>}
               </>}
             </Panel>
-            <Box className="two-column">
-              <Panel title="Ingresos y presupuestos" icon={<WalletRounded />} action={<Chip size="small" label="Próximamente" />}>
-                <Typography variant="body2" color="text.secondary">Más adelante podrás decidir qué información financiera mostrar a tu pareja.</Typography>
-              </Panel>
-              <Panel title="Compras e inversiones" icon={<ShoppingCartRounded />} action={<Chip size="small" label="Próximamente" />}>
-                <Typography variant="body2" color="text.secondary">Planeación de compras, ahorro y otras metas económicas.</Typography>
-              </Panel>
+            <Box component="aside" sx={{ mt: 5, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="overline" color="text.secondary">También te puede servir</Typography>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>Organicen las compras de casa</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Las compras del súper, los productos de limpieza y los gastos cotidianos del hogar se organizan por separado de tus necesidades mensuales.
+              </Typography>
+              <Stack direction="row" gap={1} flexWrap="wrap">
+                <Button variant="outlined" color="inherit" size="small" startIcon={<HomeRounded />}
+                  onClick={() => navigate('budget')} sx={{ borderColor: 'divider', borderRadius: 2, color: 'text.secondary' }}>{pillarTitles.home}</Button>
+                <Button variant="outlined" color="inherit" size="small" startIcon={<ShoppingCartRounded />}
+                  onClick={() => openShortcut('shopping')} sx={{ borderColor: 'divider', borderRadius: 2, color: 'text.secondary' }}>Súper y compras del hogar</Button>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>La gestión de compras del hogar estará disponible próximamente.</Typography>
             </Box>
           </Box>}
           {page === 'profile' && <Box sx={{ maxWidth: 660, mx: 'auto' }}>
@@ -1174,19 +1253,19 @@ export default function App() {
               </Stack>
             </Panel>}
             {settingsSection === 'space' && <>
-            <Panel title={paired ? "Nombre de nuestra aplicación" : "Nombre de mi aplicación"} icon={<FavoriteRounded />}>
+            <Panel title={isShared ? "Nombre de nuestra aplicación" : "Nombre de mi aplicación"} icon={<FavoriteRounded />}>
               <Typography color="text.secondary" sx={{ mb: 2 }} variant="body2">
-                {paired
+                {isShared
                   ? 'Ambos pueden cambiar este nombre y los dos verán el mismo título de su espacio compartido.'
                   : 'Personaliza tu espacio individual; después podrás elegir un nombre compartido con tu pareja.'}
               </Typography>
-              <Box component="form" onSubmit={event => { event.preventDefault(); void (paired ? saveSharedName() : saveAppName()); }}>
+              <Box component="form" onSubmit={event => { event.preventDefault(); void (isShared ? saveSharedName() : saveAppName()); }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="start">
-                  <TextField label={paired ? 'Nombre compartido' : 'Nombre de tu espacio'}
-                    value={paired ? sharedNameDraft : nameDraft}
-                    onChange={event => paired ? setSharedNameDraft(event.target.value) : setNameDraft(event.target.value)}
+                  <TextField label={isShared ? 'Nombre compartido' : 'Nombre de tu espacio'}
+                    value={isShared ? sharedNameDraft : nameDraft}
+                    onChange={event => isShared ? setSharedNameDraft(event.target.value) : setNameDraft(event.target.value)}
                     inputProps={{ maxLength: 60 }}
-                    placeholder="Ej. Nuestro rincón" helperText="Hasta 60 caracteres; vacío usa «Nuestro espacio»."
+                    placeholder={isShared ? "Ej. Nuestro rincón" : "Ej. Mi rincón"} helperText={`Hasta 60 caracteres; vacío usa «${scopeLabel}».`}
                     fullWidth />
                   <Button type="submit" variant="contained" disabled={loading} sx={{ minHeight: 56 }}>
                     Guardar
@@ -1194,10 +1273,10 @@ export default function App() {
                 </Stack>
               </Box>
             </Panel>
-            {paired && <Button sx={{ mb: 2 }} onClick={() => void refreshPairing()}>
+            {isShared && <Button sx={{ mb: 2 }} onClick={() => void refreshPairing()}>
               Actualizar nombre compartido
             </Button>}
-            {paired && <Panel title="Fotografía de nuestro espacio" icon={<FavoriteRounded />}>
+            {isShared && <Panel title="Fotografía de nuestro espacio" icon={<FavoriteRounded />}>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Ambos verán esta imagen en el panel. Por ahora puedes pegar una URL HTTPS de la fotografía; más adelante añadiremos subida de archivos.
               </Typography>
@@ -1221,16 +1300,17 @@ export default function App() {
             <Button variant="outlined" color="primary" startIcon={<LogoutRounded />} onClick={signOut}>Cerrar sesión</Button>
           </Box>}
         </Container>
+        </ThemeProvider>
         <Dialog open={coverDialogOpen} onClose={() => setCoverDialogOpen(false)} fullWidth maxWidth="sm">
           <DialogTitle>Editar foto de portada</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Introduce una URL HTTPS pública para utilizar tu propia foto. Si la dejas vacía,
-              volverá el atardecer predeterminado. {paired ? 'La fotografía será visible para ambos.' : 'Solo se cambiará tu portada individual.'}
+              volverá el atardecer predeterminado. {isShared ? 'La fotografía será visible para ambos.' : 'Solo se cambiará tu portada individual.'}
             </Typography>
             <TextField fullWidth label="URL de la imagen" placeholder="https://..."
-              value={paired ? imageDraft : personalCoverDraft}
-              onChange={e => paired ? setImageDraft(e.target.value) : setPersonalCoverDraft(e.target.value)} />
+              value={isShared ? imageDraft : personalCoverDraft}
+              onChange={e => isShared ? setImageDraft(e.target.value) : setPersonalCoverDraft(e.target.value)} />
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setCoverDialogOpen(false)}>Cancelar</Button>
@@ -1250,12 +1330,15 @@ export default function App() {
                 const selected = shortcutDraft.includes(shortcut.id);
                 const position = shortcutDraft.indexOf(shortcut.id);
                 return <Box key={shortcut.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1,
-                  border: '1px solid', borderColor: selected ? 'primary.main' : 'divider', borderRadius: 2 }}>
+                  border: '1px solid', borderColor: selected ? pillarColors[shortcut.pillar].main : 'divider', borderRadius: 2 }}>
                   <Button size="small" color={selected ? 'primary' : 'inherit'} variant={selected ? 'contained' : 'text'}
                     disabled={!selected && shortcutDraft.length >= 4}
                     onClick={() => toggleShortcutDraft(shortcut.id)}
                     startIcon={selected ? <CheckCircleRounded /> : <AddRounded />}
-                    sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', textTransform: 'none' }}>
+                    sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', textTransform: 'none',
+                      color: selected ? pillarColors[shortcut.pillar].contrast : pillarColors[shortcut.pillar].main,
+                      bgcolor: selected ? pillarColors[shortcut.pillar].main : 'transparent',
+                      '&:hover': { bgcolor: selected ? pillarColors[shortcut.pillar].main : pillarColors[shortcut.pillar].soft } }}>
                     <Box sx={{ display: 'flex', mr: 0.8 }}>{shortcut.icon}</Box>
                     <Typography variant="body2" fontWeight={600} textAlign="left">{shortcut.label}</Typography>
                   </Button>
@@ -1281,7 +1364,9 @@ export default function App() {
         {!desktop && page !== 'pair' && <Box className="mobile-navigation" sx={{ bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider' }}>
           {mobileNav.map(item => <Button key={item.value} aria-label={item.label} onClick={() => navigate(item.value)}
             sx={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25,
-              color: page === item.value ? 'primary.main' : 'text.secondary',
+              color: item.pillar ? pillarColors[item.pillar].main : page === 'home' ? 'primary.main' : 'text.secondary',
+              bgcolor: item.pillar && activePillar === item.pillar ? pillarColors[item.pillar].soft : 'transparent',
+              fontWeight: item.pillar && activePillar === item.pillar ? 700 : 500,
               fontSize: 11, px: 0.2 }}>
             {item.icon}{item.label}
           </Button>)}
