@@ -24,13 +24,14 @@ type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'prosperity' | 'finances' | '
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
-type NeedCategory = 'health' | 'food' | 'home' | 'transport' | 'entertainment' | 'education' | 'services' | 'savings' | 'other';
+type NeedCategory = string;
+type CustomNeedCategory = { value: string; name: string };
 type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string; shortcut_ids?: ShortcutId[] };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
-type MonthlyNeed = { id: number; name: string; category: NeedCategory; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
+type MonthlyNeed = { id: number; name: string; category: NeedCategory; category_label?: string; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
 const needPriorities = [{ value: 'essential', label: 'Esencial' }, { value: 'high', label: 'Alta' }, { value: 'medium', label: 'Media' }, { value: 'low', label: 'Baja' }] as const;
-const needCategories: { value: NeedCategory; label: string; icon: ReactElement }[] = [
+const defaultNeedCategories: { value: NeedCategory; label: string; icon: ReactElement }[] = [
   { value: 'health', label: 'Salud', icon: <HealthAndSafetyRounded /> },
   { value: 'food', label: 'Alimentación', icon: <RestaurantRounded /> },
   { value: 'home', label: 'Hogar', icon: <HomeRounded /> },
@@ -163,10 +164,22 @@ export default function App() {
   const [needName, setNeedName] = useState('');
   const [needCost, setNeedCost] = useState('');
   const [needPriority, setNeedPriority] = useState<MonthlyNeed['priority']>('medium');
+  const [customCategories, setCustomCategories] = useState<CustomNeedCategory[]>([]);
+  const [categoryDialog, setCategoryDialog] = useState(false);
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+  const [categoryBusy, setCategoryBusy] = useState(false);
   const [needCategory, setNeedCategory] = useState<NeedCategory>('other');
   const [needShared, setNeedShared] = useState(false);
   const [editingNeed, setEditingNeed] = useState<number | null>(null);
   const [needsLoading, setNeedsLoading] = useState(false);
+  const needCategories = [...defaultNeedCategories, ...customCategories.map(c => ({ value: c.value, label: c.name, icon: <CategoryRounded /> }))];
+  const groupingCategories = [...needCategories];
+  for (const need of monthlyNeeds) {
+    if (need.category && !groupingCategories.some(c => c.value === need.category)) {
+      groupingCategories.push({ value: need.category, label: need.category_label || 'Otros', icon: <CategoryRounded /> });
+    }
+  }
   const [needsError, setNeedsError] = useState('');
   const [items, setItems] = useState<WorkspaceItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
@@ -337,6 +350,29 @@ export default function App() {
       .finally(() => { if (active) setNeedsLoading(false); });
     return () => { active = false; };
   }, [accessToken, demo, paired, scope, page]);
+
+  useEffect(() => {
+    if (!accessToken || demo || scope !== 'personal' || page !== 'monthly-needs') return;
+    let active = true;
+    setCategoryError('');
+    api<CustomNeedCategory[]>('/finances/categories/', {}, accessToken)
+      .then(data => { if (active) setCustomCategories(data); })
+      .catch(error => { if (active) setCategoryError(error instanceof Error ? error.message : 'No se pudieron cargar las categorías.'); });
+    return () => { active = false; };
+  }, [accessToken, demo, scope, page]);
+
+  async function addNeedCategory() {
+    if (!accessToken || scope !== 'personal' || !categoryName.trim() || categoryBusy) return;
+    setCategoryBusy(true); setCategoryError('');
+    try {
+      const created = await api<CustomNeedCategory>('/finances/categories/', { method: 'POST', body: JSON.stringify({ name: categoryName.trim() }) }, accessToken);
+      setCustomCategories(previous => [...previous.filter(c => c.value !== created.value), created]);
+      setCategoryName('');
+      setNeedCategory(created.value);
+    } catch (error) {
+      setCategoryError(error instanceof Error ? error.message : 'No se pudo crear la categoría.');
+    } finally { setCategoryBusy(false); }
+  }
 
   function resetNeedForm() {
     setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedCategory('other'); setNeedShared(false); setEditingNeed(null);
@@ -619,7 +655,7 @@ export default function App() {
     clearSession();
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
-    setMonthlyNeeds([]); resetNeedForm(); setPersonalCoverUrl(''); setPersonalCoverDraft('');
+    setMonthlyNeeds([]); setCustomCategories([]); setCategoryDialog(false); setCategoryName(''); setCategoryError(''); resetNeedForm(); setPersonalCoverUrl(''); setPersonalCoverDraft('');
     setShortcutIds([...defaultShortcutIds]); setShortcutDraft([...defaultShortcutIds]); setShortcutDialogOpen(false); setShortcutTarget('');
     setAccountMenuAnchor(null); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
@@ -1115,7 +1151,7 @@ export default function App() {
           </Box>}
           {page === 'monthly-needs' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
             <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('finances')} sx={{ mb: 2 }}>Volver a Finanzas</Button>
-            <Panel title="Necesidades mensuales" icon={<ChecklistRounded />}>
+            <Panel title="Necesidades mensuales" icon={<ChecklistRounded />} action={!demo && scope === 'personal' ? <Button size="small" startIcon={<SettingsRounded />} onClick={() => setCategoryDialog(true)}>Categorías</Button> : undefined}>
               <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
                 {scope === 'personal' ? 'Esta es tu lista individual. Comparte únicamente lo que decidas.' :
                   'Solo aparecen las necesidades que cada miembro decidió compartir. Sus valores son informativos, no pagos automáticos.'}
@@ -1159,9 +1195,8 @@ export default function App() {
                   {scope === 'personal' ? 'Aún no tienes necesidades registradas.' :
                     'No hay necesidades compartidas todavía.'}
                 </Typography> : <Stack spacing={2.25}>
-                  {needCategories.map(category => {
-                    const categoryNeeds = monthlyNeeds.filter(need =>
-                      (needCategories.some(entry => entry.value === need.category) ? need.category : 'other') === category.value);
+                  {groupingCategories.map(category => {
+                    const categoryNeeds = monthlyNeeds.filter(need => (need.category || 'other') === category.value);
                     if (!categoryNeeds.length) return null;
                     const subtotal = categoryNeeds.reduce((sum, need) => sum + Number(need.cost), 0);
                     return <Box key={category.value} className="needs-category-group"
@@ -1300,6 +1335,26 @@ export default function App() {
             <Button variant="outlined" color="primary" startIcon={<LogoutRounded />} onClick={signOut}>Cerrar sesión</Button>
           </Box>}
         </Container>
+        <Dialog open={categoryDialog && scope === 'personal' && page === 'monthly-needs'} onClose={() => { if (!categoryBusy) setCategoryDialog(false); }} fullWidth maxWidth="sm">
+          <DialogTitle>Configurar categorías</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Personaliza las categorías de tus necesidades mensuales. Tu pareja solo verá las categorías asociadas a necesidades que decidas compartir.</Typography>
+            {categoryError && <Alert severity="error" sx={{ mb: 2 }}>{categoryError}</Alert>}
+            <Box component="form" onSubmit={event => { event.preventDefault(); void addNeedCategory(); }} sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 3, flexWrap: 'wrap' }}>
+              <TextField label="Nueva categoría" size="small" value={categoryName} onChange={e => setCategoryName(e.target.value)} inputProps={{ maxLength: 60 }} sx={{ flex: 1, minWidth: 160 }} />
+              <Button type="submit" variant="contained" startIcon={<AddRounded />} disabled={categoryBusy || !categoryName.trim()}>Añadir</Button>
+            </Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Mis categorías</Typography>
+            <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 3 }}>
+              {customCategories.length ? customCategories.map(c => <Chip key={c.value} icon={<CategoryRounded />} label={c.name} variant="outlined" />) : <Typography variant="body2" color="text.secondary">Aún no has añadido categorías.</Typography>}
+            </Stack>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Categorías predeterminadas</Typography>
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              {defaultNeedCategories.map(c => <Chip key={c.value} icon={c.icon} label={c.label} variant="outlined" />)}
+            </Stack>
+          </DialogContent>
+          <DialogActions><Button disabled={categoryBusy} onClick={() => setCategoryDialog(false)}>Cerrar</Button></DialogActions>
+        </Dialog>
         </ThemeProvider>
         <Dialog open={coverDialogOpen} onClose={() => setCoverDialogOpen(false)} fullWidth maxWidth="sm">
           <DialogTitle>Editar foto de portada</DialogTitle>
