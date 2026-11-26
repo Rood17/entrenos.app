@@ -20,17 +20,21 @@ import { brand, themes, pillarThemes, type Pillar, type ThemeName } from './them
 import { api, login, register, rememberSession, restoreSession, hasRememberedSession, clearSession } from './api/client';
 import './styles.css';
 
-type Page = 'home' | 'tasks' | 'budget' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
+type Page = 'home' | 'tasks' | 'budget' | 'home-finances' | 'fire' | 'prosperity' | 'finances' | 'monthly-needs' | 'profile' | 'pair';
 type AuthMode = 'login' | 'register';
 type Task = { name: string; priority: 'Alta' | 'Media' | 'Baja'; done: boolean };
 type ShortcutId = 'finances' | 'projects' | 'cleaning' | 'agreements' | 'shopping' | 'tasks';
-type NeedCategory = 'health' | 'food' | 'home' | 'transport' | 'entertainment' | 'education' | 'services' | 'savings' | 'other';
+type NeedCategory = string;
+type CustomNeedCategory = { value: string; name: string };
+type Commitment = { id: number; origin: string; name: string; category: string; cost: string; frequency: string; due_date: string | null; shared: boolean; owner_share: number; paid: boolean; owner_name: string; monthly_cost: string };
+type FinancialSummary = { monthly_by_origin: Record<'home' | 'fire' | 'prosperity', string>; total_monthly: string };
+const emptyCommitment = { name: '', category: 'Vivienda', cost: '', frequency: 'monthly', due_date: '', shared: false, owner_share: 100, paid: false };
 type UserProfile = { id: number; app_name: string; first_name: string; username: string; email: string; hero_image_url: string; shortcut_ids?: ShortcutId[] };
 type WorkspaceItem = { id: number; kind: 'task' | 'note' | 'rule'; title: string; content: string; tag: string; priority: 'low' | 'medium' | 'high'; completed: boolean };
 type WorkspaceScope = 'personal' | 'shared';
-type MonthlyNeed = { id: number; name: string; category: NeedCategory; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
+type MonthlyNeed = { id: number; name: string; category: NeedCategory; category_label?: string; priority: 'low' | 'medium' | 'high' | 'essential'; cost: string; shared: boolean; owner_name: string };
 const needPriorities = [{ value: 'essential', label: 'Esencial' }, { value: 'high', label: 'Alta' }, { value: 'medium', label: 'Media' }, { value: 'low', label: 'Baja' }] as const;
-const needCategories: { value: NeedCategory; label: string; icon: ReactElement }[] = [
+const defaultNeedCategories: { value: NeedCategory; label: string; icon: ReactElement }[] = [
   { value: 'health', label: 'Salud', icon: <HealthAndSafetyRounded /> },
   { value: 'food', label: 'Alimentación', icon: <RestaurantRounded /> },
   { value: 'home', label: 'Hogar', icon: <HomeRounded /> },
@@ -163,10 +167,28 @@ export default function App() {
   const [needName, setNeedName] = useState('');
   const [needCost, setNeedCost] = useState('');
   const [needPriority, setNeedPriority] = useState<MonthlyNeed['priority']>('medium');
+  const [commitments, setCommitments] = useState<Commitment[]>([]);
+  const [commitmentDraft, setCommitmentDraft] = useState(emptyCommitment);
+  const [commitmentId, setCommitmentId] = useState<number | null>(null);
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
+  const [financeError, setFinanceError] = useState('');
+  const [financeBusy, setFinanceBusy] = useState(false);
+  const [customCategories, setCustomCategories] = useState<CustomNeedCategory[]>([]);
+  const [categoryDialog, setCategoryDialog] = useState(false);
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+  const [categoryBusy, setCategoryBusy] = useState(false);
   const [needCategory, setNeedCategory] = useState<NeedCategory>('other');
   const [needShared, setNeedShared] = useState(false);
   const [editingNeed, setEditingNeed] = useState<number | null>(null);
   const [needsLoading, setNeedsLoading] = useState(false);
+  const needCategories = [...defaultNeedCategories, ...customCategories.map(c => ({ value: c.value, label: c.name, icon: <CategoryRounded /> }))];
+  const groupingCategories = [...needCategories];
+  for (const need of monthlyNeeds) {
+    if (need.category && !groupingCategories.some(c => c.value === need.category)) {
+      groupingCategories.push({ value: need.category, label: need.category_label || 'Otros', icon: <CategoryRounded /> });
+    }
+  }
   const [needsError, setNeedsError] = useState('');
   const [items, setItems] = useState<WorkspaceItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
@@ -183,7 +205,7 @@ export default function App() {
     sacredFire: isShared ? 'Nuestro fuego sagrado' : 'Mi fuego sagrado',
     prosperity: isShared ? 'Nuestra prosperidad' : 'Mi prosperidad',
   };
-  const activePillar: Pillar | undefined = page === 'budget' || page === 'tasks' ? 'home' :
+  const activePillar: Pillar | undefined = page === 'budget' || page === 'tasks' || page === 'home-finances' ? 'home' :
     page === 'fire' ? 'sacredFire' : ['prosperity', 'finances', 'monthly-needs'].includes(page) ? 'prosperity' : undefined;
   const contentTheme = useMemo(() => activePillar ? buildTheme(themeName, activePillar) : theme, [theme, themeName, activePillar]);
   const inApp = demo || Boolean(accessToken);
@@ -337,6 +359,72 @@ export default function App() {
       .finally(() => { if (active) setNeedsLoading(false); });
     return () => { active = false; };
   }, [accessToken, demo, paired, scope, page]);
+
+  useEffect(() => {
+    if (!accessToken || demo || scope !== 'personal' || page !== 'monthly-needs') return;
+    let active = true;
+    setCategoryError('');
+    api<CustomNeedCategory[]>('/finances/categories/', {}, accessToken)
+      .then(data => { if (active) setCustomCategories(data); })
+      .catch(error => { if (active) setCategoryError(error instanceof Error ? error.message : 'No se pudieron cargar las categorías.'); });
+    return () => { active = false; };
+  }, [accessToken, demo, scope, page]);
+
+  async function addNeedCategory() {
+    if (!accessToken || scope !== 'personal' || !categoryName.trim() || categoryBusy) return;
+    setCategoryBusy(true); setCategoryError('');
+    try {
+      const created = await api<CustomNeedCategory>('/finances/categories/', { method: 'POST', body: JSON.stringify({ name: categoryName.trim() }) }, accessToken);
+      setCustomCategories(previous => [...previous.filter(c => c.value !== created.value), created]);
+      setCategoryName('');
+      setNeedCategory(created.value);
+    } catch (error) {
+      setCategoryError(error instanceof Error ? error.message : 'No se pudo crear la categoría.');
+    } finally { setCategoryBusy(false); }
+  }
+
+  useEffect(() => {
+    setCommitments([]); setFinancialSummary(null); setFinanceError('');
+    setCommitmentDraft(emptyCommitment); setCommitmentId(null); setFinanceBusy(false);
+    if (!accessToken || demo || (scope === 'shared' && !paired)) return;
+    if (!['home-finances', 'prosperity', 'finances'].includes(page)) return;
+    let active = true;
+    setFinanceBusy(true);
+    const load = page === 'home-finances'
+      ? api<Commitment[]>(`/finances/commitments/?origin=home&scope=${scope}`, {}, accessToken).then(data => { if (active) setCommitments(data); })
+      : api<FinancialSummary>(`/finances/summary/?scope=${scope}`, {}, accessToken).then(data => { if (active) setFinancialSummary(data); });
+    load.catch(error => { if (active) setFinanceError(error instanceof Error ? error.message : 'No se pudo cargar la información financiera.'); })
+      .finally(() => { if (active) setFinanceBusy(false); });
+    return () => { active = false; };
+  }, [accessToken, demo, paired, scope, page]);
+
+  async function saveCommitment() {
+    if (!accessToken || scope !== 'personal' || financeBusy) return;
+    if (!commitmentDraft.name.trim() || !commitmentDraft.cost.trim() || !Number.isFinite(Number(commitmentDraft.cost)) || Number(commitmentDraft.cost) < 0) {
+      setFinanceError('Ingresa un concepto y un importe válido.'); return;
+    }
+    setFinanceBusy(true); setFinanceError('');
+    try {
+      const saved = await api<Commitment>(commitmentId ? `/finances/commitments/${commitmentId}/` : '/finances/commitments/', {
+        method: commitmentId ? 'PATCH' : 'POST',
+        body: JSON.stringify({ ...commitmentDraft, origin: 'home', due_date: commitmentDraft.due_date || null }),
+      }, accessToken);
+      setCommitments(previous => [saved, ...previous.filter(c => c.id !== saved.id)]);
+      setCommitmentDraft(emptyCommitment); setCommitmentId(null);
+    } catch (error) { setFinanceError(error instanceof Error ? error.message : 'No se pudo guardar el gasto.'); }
+    finally { setFinanceBusy(false); }
+  }
+
+  async function removeCommitment(id: number) {
+    if (!accessToken || scope !== 'personal' || financeBusy || !window.confirm('¿Eliminar este compromiso financiero?')) return;
+    setFinanceBusy(true); setFinanceError('');
+    try {
+      await api<unknown>(`/finances/commitments/${id}/`, { method: 'DELETE' }, accessToken);
+      setCommitments(previous => previous.filter(c => c.id !== id));
+      if (commitmentId === id) { setCommitmentId(null); setCommitmentDraft(emptyCommitment); }
+    } catch (error) { setFinanceError(error instanceof Error ? error.message : 'No se pudo eliminar el gasto.'); }
+    finally { setFinanceBusy(false); }
+  }
 
   function resetNeedForm() {
     setNeedName(''); setNeedCost(''); setNeedPriority('medium'); setNeedCategory('other'); setNeedShared(false); setEditingNeed(null);
@@ -619,7 +707,7 @@ export default function App() {
     clearSession();
     setAccessToken(''); setDemo(false); setPaired(false); setShowAuth(false);
     setPassword(''); setGeneratedCode(''); setInvitePassword(''); setAcceptPassword(''); setPage('home'); setMessage('');
-    setMonthlyNeeds([]); resetNeedForm(); setPersonalCoverUrl(''); setPersonalCoverDraft('');
+    setMonthlyNeeds([]); setCustomCategories([]); setCategoryDialog(false); setCategoryName(''); setCategoryError(''); resetNeedForm(); setPersonalCoverUrl(''); setPersonalCoverDraft('');
     setShortcutIds([...defaultShortcutIds]); setShortcutDraft([...defaultShortcutIds]); setShortcutDialogOpen(false); setShortcutTarget('');
     setAccountMenuAnchor(null); setPersonName(''); setAppName(''); setNameDraft(''); setSharedName(''); setSharedNameDraft(''); setSharedImage(''); setImageDraft(''); setItems([]); setScope('personal');
   }
@@ -983,6 +1071,7 @@ export default function App() {
                 <Typography color="text.secondary" variant="body2">{isShared ? 'Organicen juntos la limpieza, los acuerdos y las normas para convivir.' : 'Organiza la limpieza, las responsabilidades y las compras de tu hogar.'}</Typography>
                 <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
                   {shortcutChip('cleaning')}{shortcutChip('agreements')}{shortcutChip('shopping')}
+                  <Chip clickable icon={<WalletRounded />} label="Finanzas del hogar" onClick={() => navigate('home-finances')} sx={pillarChipStyle('home')} />
                 </Stack>
               </Panel>
               <Panel title={pillarTitles.sacredFire} icon={<LocalFireDepartmentRounded />} tone={pillarColors.sacredFire}
@@ -1048,7 +1137,52 @@ export default function App() {
                   Aquí reuniremos las compras necesarias para la casa. Los importes podrán consultarse después en Finanzas, con privacidad configurable.
                 </Typography>
               </Panel>
+              <Panel title="Finanzas del hogar" icon={<WalletRounded />} action={<Button size="small" onClick={() => navigate('home-finances')}>Entrar</Button>}>
+                <Typography variant="body2" color="text.secondary">Renta, servicios y gastos recurrentes de vivienda, con vencimientos y distribución de pagos.</Typography>
+              </Panel>
             </Box>
+          </Box>}
+          {page === 'home-finances' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
+            <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('budget')} sx={{ mb: 2 }}>Volver a {pillarTitles.home}</Button>
+            <Panel title="Finanzas del hogar" icon={<WalletRounded />}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Registra renta, servicios y compromisos recurrentes de vivienda. Su equivalente mensual se integra automáticamente en Prosperidad.</Typography>
+              {financeError && <Alert severity="error" sx={{ mb: 2 }}>{financeError}</Alert>}
+              {financeBusy && <LinearProgress sx={{ mb: 2 }} />}
+              {demo ? <Alert severity="info">Inicia sesión para guardar gastos reales.</Alert> : <>
+              {scope === 'personal' && <Box component="form" onSubmit={e => { e.preventDefault(); void saveCommitment(); }} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 3 }}>
+                <TextField required label="Concepto" value={commitmentDraft.name} inputProps={{ maxLength: 150 }} onChange={e => setCommitmentDraft(d => ({ ...d, name: e.target.value }))} />
+                <TextField select label="Categoría" value={commitmentDraft.category} onChange={e => setCommitmentDraft(d => ({ ...d, category: e.target.value }))}>
+                  {['Vivienda', 'Electricidad', 'Agua', 'Gas', 'Internet', 'Mantenimiento', 'Seguridad', 'Otros'].map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+                </TextField>
+                <TextField required type="number" label="Importe por periodo (MXN)" value={commitmentDraft.cost} inputProps={{ min: 0, step: '0.01' }} onChange={e => setCommitmentDraft(d => ({ ...d, cost: e.target.value }))} />
+                <TextField select label="Periodicidad" value={commitmentDraft.frequency} onChange={e => setCommitmentDraft(d => ({ ...d, frequency: e.target.value }))}>
+                  <MenuItem value="monthly">Mensual</MenuItem><MenuItem value="bimonthly">Bimestral</MenuItem><MenuItem value="annual">Anual</MenuItem>
+                </TextField>
+                <TextField type="date" label="Vencimiento" InputLabelProps={{ shrink: true }} value={commitmentDraft.due_date} onChange={e => setCommitmentDraft(d => ({ ...d, due_date: e.target.value }))} />
+                <FormControlLabel control={<Checkbox checked={commitmentDraft.paid} onChange={e => setCommitmentDraft(d => ({ ...d, paid: e.target.checked }))} />} label="Pagado" />
+                <FormControlLabel control={<Checkbox checked={commitmentDraft.shared} disabled={!paired} onChange={e => setCommitmentDraft(d => ({ ...d, shared: e.target.checked, owner_share: 100 }))} />} label="Compartir con mi pareja" />
+                {commitmentDraft.shared && <TextField type="number" label="Mi porcentaje (%)" value={commitmentDraft.owner_share} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => setCommitmentDraft(d => ({ ...d, owner_share: Number(e.target.value) }))} helperText="El porcentaje restante corresponde a tu pareja." />}
+                <Stack direction="row" gap={1}>
+                  <Button type="submit" variant="contained" disabled={financeBusy || !commitmentDraft.name.trim() || !commitmentDraft.cost.trim()}>{commitmentId ? 'Guardar cambios' : 'Añadir gasto'}</Button>
+                  {commitmentId && <Button onClick={() => { setCommitmentId(null); setCommitmentDraft(emptyCommitment); }}>Cancelar</Button>}
+                </Stack>
+              </Box>}
+              <Divider sx={{ mb: 2 }} />
+              <Stack spacing={1.5}>
+                {!commitments.length && !financeBusy && <Typography color="text.secondary">Todavía no hay gastos del hogar registrados en este espacio.</Typography>}
+                {commitments.map(c => <Card key={c.id} variant="outlined"><CardContent>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }}>
+                    <Box sx={{ flex: 1 }}><Typography fontWeight={700}>{c.name}</Typography><Typography variant="body2" color="text.secondary">{c.category} · {c.frequency === 'monthly' ? 'Mensual' : c.frequency === 'bimonthly' ? 'Bimestral' : 'Anual'} · {c.due_date || 'Sin vencimiento'}</Typography>
+                    <Typography variant="caption" color="text.secondary">{scope === 'shared' ? c.owner_name + ' · ' : ''}{c.shared ? 'Compartido · titular ' + c.owner_share + '%' : 'Privado'}</Typography></Box>
+                    <Chip size="small" label={c.paid ? 'Pagado' : 'Pendiente'} color={c.paid ? 'success' : 'default'} />
+                    <Box><Typography fontWeight={700}>{currency(Number(c.cost))}</Typography><Typography variant="caption">{currency(Number(c.monthly_cost))}/mes equivalente</Typography></Box>
+                    {scope === 'personal' && <Stack direction="row"><Button size="small" onClick={() => { setCommitmentId(c.id); setCommitmentDraft({ name: c.name, category: c.category, cost: c.cost, frequency: c.frequency, due_date: c.due_date || '', shared: c.shared, owner_share: c.owner_share, paid: c.paid }); }}>Editar</Button><Button size="small" color="error" disabled={financeBusy} onClick={() => void removeCommitment(c.id)}>Eliminar</Button></Stack>}
+                  </Stack>
+                </CardContent></Card>)}
+              </Stack>
+              </>}
+            </Panel>
+            <Button onClick={() => navigate('prosperity')} startIcon={<SpaRounded />}>Consultar resumen en Prosperidad</Button>
           </Box>}
           {page === 'fire' && <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
             <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 1 }}>
@@ -1080,6 +1214,19 @@ export default function App() {
               <Typography variant="h4">{pillarTitles.prosperity}</Typography>
             </Stack>
             <Typography color="text.secondary" sx={{ mb: 3 }}>{isShared ? 'Construyan estabilidad económica respetando la privacidad de cada persona.' : 'Organiza tus recursos, tus compromisos y tus metas económicas.'}</Typography>
+            <Panel title="Compromisos mensuales consolidados" icon={<WalletRounded />}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{isShared ? 'Solo registros compartidos; importes completos.' : 'Tus necesidades personales y tu parte de los gastos recurrentes, incluidos los que tu pareja te asigna.'} Los gastos anuales y bimestrales se convierten a equivalentes mensuales.</Typography>
+              {financeError && <Alert severity="error">{financeError}</Alert>}
+              {financeBusy && <LinearProgress />}
+              {demo && <Typography color="text.secondary">Inicia sesión para consultar tus importes.</Typography>}
+              {financialSummary && <Stack spacing={1.5}>
+                {([{ key: 'home', label: 'Hogar', target: 'home-finances', pillar: 'home' }, { key: 'fire', label: 'Fuego sagrado', target: 'fire', pillar: 'sacredFire' }, { key: 'prosperity', label: 'Prosperidad', target: 'monthly-needs', pillar: 'prosperity' }] as const).map(item => <Stack key={item.key} direction="row" alignItems="center" justifyContent="space-between">
+                  <Button size="small" onClick={() => navigate(item.target)} sx={{ color: pillarColors[item.pillar].main }}>{item.label}</Button>
+                  <Typography fontWeight={700}>{currency(Number(financialSummary.monthly_by_origin[item.key]))}</Typography>
+                </Stack>)}
+                <Divider /><Stack direction="row" justifyContent="space-between"><Typography fontWeight={700}>Total mensual estimado</Typography><Typography variant="h6">{currency(Number(financialSummary.total_monthly))}</Typography></Stack>
+              </Stack>}
+            </Panel>
             <Box className="two-column">
               <Panel title="Finanzas" icon={<WalletRounded />} action={<Button size="small" onClick={() => navigate('finances')}>Entrar</Button>}>
                 <Typography variant="body2" color="text.secondary">Necesidades recurrentes, presupuestos, ahorro e inversiones.</Typography>
@@ -1115,7 +1262,7 @@ export default function App() {
           </Box>}
           {page === 'monthly-needs' && <Box sx={{ maxWidth: 1040, mx: 'auto' }}>
             <Button startIcon={<ArrowBackRounded />} onClick={() => navigate('finances')} sx={{ mb: 2 }}>Volver a Finanzas</Button>
-            <Panel title="Necesidades mensuales" icon={<ChecklistRounded />}>
+            <Panel title="Necesidades mensuales" icon={<ChecklistRounded />} action={!demo && scope === 'personal' ? <Button size="small" startIcon={<SettingsRounded />} onClick={() => setCategoryDialog(true)}>Categorías</Button> : undefined}>
               <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
                 {scope === 'personal' ? 'Esta es tu lista individual. Comparte únicamente lo que decidas.' :
                   'Solo aparecen las necesidades que cada miembro decidió compartir. Sus valores son informativos, no pagos automáticos.'}
@@ -1159,9 +1306,8 @@ export default function App() {
                   {scope === 'personal' ? 'Aún no tienes necesidades registradas.' :
                     'No hay necesidades compartidas todavía.'}
                 </Typography> : <Stack spacing={2.25}>
-                  {needCategories.map(category => {
-                    const categoryNeeds = monthlyNeeds.filter(need =>
-                      (needCategories.some(entry => entry.value === need.category) ? need.category : 'other') === category.value);
+                  {groupingCategories.map(category => {
+                    const categoryNeeds = monthlyNeeds.filter(need => (need.category || 'other') === category.value);
                     if (!categoryNeeds.length) return null;
                     const subtotal = categoryNeeds.reduce((sum, need) => sum + Number(need.cost), 0);
                     return <Box key={category.value} className="needs-category-group"
@@ -1300,6 +1446,26 @@ export default function App() {
             <Button variant="outlined" color="primary" startIcon={<LogoutRounded />} onClick={signOut}>Cerrar sesión</Button>
           </Box>}
         </Container>
+        <Dialog open={categoryDialog && scope === 'personal' && page === 'monthly-needs'} onClose={() => { if (!categoryBusy) setCategoryDialog(false); }} fullWidth maxWidth="sm">
+          <DialogTitle>Configurar categorías</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Personaliza las categorías de tus necesidades mensuales. Tu pareja solo verá las categorías asociadas a necesidades que decidas compartir.</Typography>
+            {categoryError && <Alert severity="error" sx={{ mb: 2 }}>{categoryError}</Alert>}
+            <Box component="form" onSubmit={event => { event.preventDefault(); void addNeedCategory(); }} sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 3, flexWrap: 'wrap' }}>
+              <TextField label="Nueva categoría" size="small" value={categoryName} onChange={e => setCategoryName(e.target.value)} inputProps={{ maxLength: 60 }} sx={{ flex: 1, minWidth: 160 }} />
+              <Button type="submit" variant="contained" startIcon={<AddRounded />} disabled={categoryBusy || !categoryName.trim()}>Añadir</Button>
+            </Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Mis categorías</Typography>
+            <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 3 }}>
+              {customCategories.length ? customCategories.map(c => <Chip key={c.value} icon={<CategoryRounded />} label={c.name} variant="outlined" />) : <Typography variant="body2" color="text.secondary">Aún no has añadido categorías.</Typography>}
+            </Stack>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Categorías predeterminadas</Typography>
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              {defaultNeedCategories.map(c => <Chip key={c.value} icon={c.icon} label={c.label} variant="outlined" />)}
+            </Stack>
+          </DialogContent>
+          <DialogActions><Button disabled={categoryBusy} onClick={() => setCategoryDialog(false)}>Cerrar</Button></DialogActions>
+        </Dialog>
         </ThemeProvider>
         <Dialog open={coverDialogOpen} onClose={() => setCoverDialogOpen(false)} fullWidth maxWidth="sm">
           <DialogTitle>Editar foto de portada</DialogTitle>
