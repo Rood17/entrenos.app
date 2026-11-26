@@ -1253,19 +1253,19 @@ export default function App() {
               </Stack>
             </Panel>}
             {settingsSection === 'space' && <>
-            <Panel title={paired ? "Nombre de nuestra aplicación" : "Nombre de mi aplicación"} icon={<FavoriteRounded />}>
+            <Panel title={isShared ? "Nombre de nuestra aplicación" : "Nombre de mi aplicación"} icon={<FavoriteRounded />}>
               <Typography color="text.secondary" sx={{ mb: 2 }} variant="body2">
-                {paired
+                {isShared
                   ? 'Ambos pueden cambiar este nombre y los dos verán el mismo título de su espacio compartido.'
                   : 'Personaliza tu espacio individual; después podrás elegir un nombre compartido con tu pareja.'}
               </Typography>
-              <Box component="form" onSubmit={event => { event.preventDefault(); void (paired ? saveSharedName() : saveAppName()); }}>
+              <Box component="form" onSubmit={event => { event.preventDefault(); void (isShared ? saveSharedName() : saveAppName()); }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="start">
-                  <TextField label={paired ? 'Nombre compartido' : 'Nombre de tu espacio'}
-                    value={paired ? sharedNameDraft : nameDraft}
-                    onChange={event => paired ? setSharedNameDraft(event.target.value) : setNameDraft(event.target.value)}
+                  <TextField label={isShared ? 'Nombre compartido' : 'Nombre de tu espacio'}
+                    value={isShared ? sharedNameDraft : nameDraft}
+                    onChange={event => isShared ? setSharedNameDraft(event.target.value) : setNameDraft(event.target.value)}
                     inputProps={{ maxLength: 60 }}
-                    placeholder="Ej. Nuestro rincón" helperText="Hasta 60 caracteres; vacío usa «Nuestro espacio»."
+                    placeholder={isShared ? "Ej. Nuestro rincón" : "Ej. Mi rincón"} helperText={`Hasta 60 caracteres; vacío usa «${scopeLabel}».`}
                     fullWidth />
                   <Button type="submit" variant="contained" disabled={loading} sx={{ minHeight: 56 }}>
                     Guardar
@@ -1273,10 +1273,10 @@ export default function App() {
                 </Stack>
               </Box>
             </Panel>
-            {paired && <Button sx={{ mb: 2 }} onClick={() => void refreshPairing()}>
+            {isShared && <Button sx={{ mb: 2 }} onClick={() => void refreshPairing()}>
               Actualizar nombre compartido
             </Button>}
-            {paired && <Panel title="Fotografía de nuestro espacio" icon={<FavoriteRounded />}>
+            {isShared && <Panel title="Fotografía de nuestro espacio" icon={<FavoriteRounded />}>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Ambos verán esta imagen en el panel. Por ahora puedes pegar una URL HTTPS de la fotografía; más adelante añadiremos subida de archivos.
               </Typography>
